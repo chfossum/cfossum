@@ -1,0 +1,221 @@
+---
+title: "Step 3_ Plumas Analysis"
+author: "Christina Fossum"
+date: "2023-09-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Preliminary analyses of Sonoma and Plumas County burn prescriptions
+
+```{R}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+
+plumas <- fread("Routput/Plumas/Plumas_in_prescription.csv")
+sonoma <- fread("Routput/Sonoma/sonoma_in_prescription.csv")
+
+#spatial cell summaries
+psum <- plumas %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, dates)  %>% summarise(ncells = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(MEAN = mean(ncells), MAX = max(ncells), MIN = min(ncells), MEDIAN = median(ncells)) %>% ungroup()
+
+ggplot(subset(psum, LIFE_FORM %in% "CONIFER"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+ggplot(subset(psum, LIFE_FORM %in% "SHRUB"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+ggplot(subset(psum, LIFE_FORM %in% "HERBACEOUS"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+ggplot(subset(psum, LIFE_FORM %in% "HARDWOOD"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+#Ok this is really not that useful, I think will need to actually be looked at spatially
+
+#####
+#days
+psum <- plumas %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(MEAN = mean(ndays), MAX = max(ndays), MIN = min(ndays), MEDIAN = median(ndays)) %>% ungroup()
+
+ggplot(subset(psum, LIFE_FORM %in% "CONIFER"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+ggplot(subset(psum, LIFE_FORM %in% "SHRUB"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+ggplot(subset(psum, LIFE_FORM %in% "HERBACEOUS"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+ggplot(subset(psum, LIFE_FORM %in% "HARDWOOD"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
+
+###
+# Plumas vs. Sonoma
+p <- plumas %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(pmean = mean(ndays)) %>% ungroup()
+s <- sonoma %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(smean = mean(ndays)) %>% ungroup()
+
+ps <- full_join(p, s)
+ps <- na.omit(ps)
+
+ggplot(subset(ps, LIFE_FORM %in% "CONIFER"),aes(x = year)) + geom_line(aes(y = pmean), col = 'brown') + geom_line(aes(y = smean), col = 'black') +  facet_wrap(vars(season))
+
+
+
+
+```
+
+
+
+# Bar plots with weather/social filters
+
+1. Plumas
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+
+data <- fread("Routput/Plumas/Plumas_in_prescription.csv")
+dataS <- fread("Routput/Plumas/Plumas_social_prescription.csv")
+
+data1 <- data %>% group_by(LIFE_FORM, lat, long, season, year) %>% summarise(total = n()) %>% ungroup() %>%group_by(long, lat, LIFE_FORM, year, season) %>% summarise(seasonaltotal = sum(total)) %>% ungroup() %>% group_by(LIFE_FORM,year, lat, long) %>% mutate(annualtotal = sum(seasonaltotal)) %>%  ungroup() 
+data$year <- as.factor(data$year)
+d1avg <- data1 %>% group_by(LIFE_FORM, season, year) %>% summarise(avg_n = mean(seasonaltotal)) %>% ungroup()
+
+dataS1 <- dataS %>% group_by(LIFE_FORM, lat, long, season, year) %>% summarise(total = n()) %>% ungroup() %>%group_by(long, lat, LIFE_FORM, year, season) %>% summarise(seasonaltotal = sum(total)) %>% ungroup() %>% group_by(LIFE_FORM,year, lat, long) %>% mutate(annualtotal = sum(seasonaltotal)) %>%  ungroup() 
+dataS1$year <- as.factor(dataS1$year)
+dS1avg <- dataS1 %>% group_by(LIFE_FORM, season, year) %>% summarise(avg_n = mean(seasonaltotal)) %>% ungroup()
+dS1avg <- dS1avg %>% rename(avg_n2 = "avg_n") %>% select(avg_n2)
+
+d1_S1 <- cbind(d1avg, dS1avg)
+
+ggplot(subset(d1_S1, season %in% "fall")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Fall days in prescription - Plumas", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(d1_S1, season %in% "summer")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Summer days in prescription - Plumas", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(d1_S1, season %in% "spring")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Spring days in prescription - Plumas", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(d1_S1, season %in% "winter")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Winter days in prescription - Plumas", y = "number of days in prescription") + theme_minimal()
+
+```
+
+2. Sonoma
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+
+data <- fread("Routput/Sonoma/sonoma_in_prescription.csv")
+dataS <- fread("Routput/Sonoma/sonoma_social_prescription.csv")
+data <- unique(data)
+dataS <- unique(dataS)
+
+data1 <- data %>% group_by(LIFE_FORM, lat, long, season, year) %>% summarise(total = n()) %>% ungroup() %>%group_by(long, lat, LIFE_FORM, year, season) %>% summarise(seasonaltotal = sum(total)) %>% ungroup() %>% group_by(LIFE_FORM,year, lat, long) %>% mutate(annualtotal = sum(seasonaltotal)) %>%  ungroup() 
+data$year <- as.factor(data$year)
+d1avg <- data1 %>% group_by(LIFE_FORM, season, year) %>% summarise(avg_n = mean(seasonaltotal)) %>% ungroup()
+
+dataS1 <- dataS %>% group_by(LIFE_FORM, lat, long, season, year) %>% summarise(total = n()) %>% ungroup() %>%group_by(long, lat, LIFE_FORM, year, season) %>% summarise(seasonaltotal = sum(total)) %>% ungroup() %>% group_by(LIFE_FORM,year, lat, long) %>% mutate(annualtotal = sum(seasonaltotal)) %>%  ungroup() 
+dataS1$year <- as.factor(dataS1$year)
+dS1avg <- dataS1 %>% group_by(LIFE_FORM, season, year) %>% summarise(avg_n = mean(seasonaltotal)) %>% ungroup()
+dS1avg <- dS1avg %>% rename(avg_n2 = "avg_n") %>% select(avg_n2)
+
+d1_S1 <- cbind(d1avg, dS1avg)
+
+ggplot(subset(d1_S1, season %in% "fall")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Fall days in prescription - Sonoma", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(d1_S1, season %in% "summer")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Summer days in prescription - Sonoma", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(d1_S1, season %in% "spring")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Spring days in prescription - Sonoma", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(d1_S1, season %in% "winter")) + geom_col(aes(x = year, y = avg_n), fill = 'black') + geom_col(aes(x = year, y = avg_n2), fill = 'red') + facet_wrap(vars(LIFE_FORM)) + labs(title = "Winter days in prescription - Sonoma", y = "number of days in prescription") + theme_minimal()
+
+```
+
+
+
+
+ Violin plots / heat maps for later (not run)
+```{r eval=FALSE, include=FALSE}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+
+#load the filtered data
+data1 <- fread("Routput/Plumas/plumas_conifer_prescription.csv")
+data2 <- fread("Routput/Plumas/plumas_hardwood_prescription.csv")
+data3 <- fread("Routput/Plumas/plumas_herb_prescription.csv")
+data4 <- fread("Routput/Plumas/plumas_shrub_prescription.csv")
+
+data <- rbind(data1, data2)
+data <- rbind(data, data3)
+data <- rbind(data, data4)
+
+#format for preliminary analyses
+data$dates <- as_date(data$dates)
+
+uniquelatlon <- unique(data[,c('lat', 'long')]) 
+geomID <- (c(1:829))
+geomID <- as.data.frame(geomID)
+geomID <- cbind(uniquelatlon, geomID)
+data <- left_join(data, geomID)
+
+
+#plot proportion of day in prescription in season?
+
+seasondata <- data %>% group_by(LIFE_FORM, geomID, season, year) %>% summarise(seasonaltotal = n()) %>% ungroup() %>%
+  group_by(LIFE_FORM,year, geomID) %>% mutate(annualtotal = sum(seasonaltotal)) %>%  ungroup() %>% ungroup() 
+seasondata$year <- as.factor(seasondata$year)
+
+ggplot(subset(seasondata, season %in% "fall")) + geom_violin(aes(x = year, y = seasonaltotal)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Fall days in prescription", y = "number of days in prescription") + theme_minimal()
+
+
+ggplot(subset(seasondata, season %in% "spring")) + geom_violin(aes(x = year, y = seasonaltotal)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Spring days in prescription", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(seasondata, season %in% "summer")) + geom_violin(aes(x = year, y = seasonaltotal)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Summer days in prescription", y = "number of days in prescription")+ theme_minimal()
+  
+ggplot(subset(seasondata, season %in% "winter")) + geom_violin(aes(x = year, y = seasonaltotal)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Winter days in prescription", y = "number of days in prescription") + theme_minimal()
+
+#barplot
+sznavg <- seasondata %>% group_by(LIFE_FORM, season, year) %>% summarise(avg_n = mean(seasonaltotal)) %>% ungroup()
+
+ggplot(subset(sznavg, season %in% "fall")) + geom_col(aes(x = year, y = avg_n)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Fall days in prescription", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(sznavg, season %in% "spring")) + geom_col(aes(x = year, y = avg_n)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Spring days in prescription", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(sznavg, season %in% "summer")) + geom_col(aes(x = year, y = avg_n)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Summer days in prescription", y = "number of days in prescription") + theme_minimal()
+
+ggplot(subset(sznavg, season %in% "winter")) + geom_col(aes(x = year, y = avg_n)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Winter days in prescription", y = "number of days in prescription") + theme_minimal()
+
+
+#heatmap: avg per season per veg type
+htmp <- data %>% group_by(LIFE_FORM, lat, long, season, year) %>% summarise(seasonaltotal = n()) %>% ungroup() %>%group_by(LIFE_FORM,year, lat, long) %>% mutate(annualtotal = sum(seasonaltotal)) %>%  ungroup() %>% ungroup() 
+library(sf)
+library(tmap)
+plumas <- st_read("california_counties/CaliforniaCounties.shp")
+plumas <- plumas %>% filter(NAME=="Plumas")
+plumas <- plumas %>% dplyr::select(NAME, geometry)
+plumas <- st_transform(plumas, crs=26910)
+htmp <- st_as_sf(htmp, coords = c('long', 'lat'), crs = st_crs(plumas))
+htmp2 <- htmp %>% group_by(geometry, LIFE_FORM, season) %>% summarise(avg_seasonal_total = mean(seasonaltotal))
+
+
+tmap_mode("plot")
+
+fall2003 <- htmp %>% filter(year == 2003 & season == "fall")
+
+tm_shape(htmp2) + tm_dots("avg_seasonal_total", size = 2) + tm_facets(by = c("LIFE_FORM", "season")) 
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

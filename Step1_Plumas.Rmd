@@ -1,0 +1,159 @@
+---
+title: "Step1_Plumas"
+author: "Christina Fossum"
+date: "2023-09-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Extracting data from .nc to .csv format
+
+This document contains code and explanation for extracting the DRI weather data in raster form from CalFire external harddrive into workable .csv file. This is the first step in processing/analysing this data for prescribed burn window analysis
+
+
+# 1. Load shapefile for county of interest (in this case, Plumas), and function to process weather data
+
+```{r}
+
+library(here)
+library(tidyverse)
+library(raster)
+library(sf)
+library(sp)
+library(rgdal)
+library(data.table)
+
+plumas <- read_sf("california_counties/CaliforniaCounties.shp")
+plumas <- plumas %>% filter(NAME=="Plumas")
+plumas <- plumas %>% dplyr::select(NAME, geometry)
+plumas <- st_transform(plumas, crs=26910)
+
+
+fun <- function(x){  
+  zz1 <- brick(x)
+  zzlat <- brick(x, varname="XLAT")
+  zzlon <- brick(x, varname="XLONG")
+  latm <- as.matrix(zzlat)
+  lonm <- as.matrix(zzlon)
+  LL <- cbind(latm, lonm)
+  colnames(LL) <- c("Lat", "Long")
+  LL <- as_tibble(LL)
+  matrix <- as.matrix(zz1)
+  matrix <- as.tibble(matrix)
+  all <- cbind(LL, matrix)
+  coordinates(all) <- c("Long", "Lat")
+  proj4string(all) <- CRS("+proj=longlat +datum=WGS84")
+  res <- spTransform(all, CRS("+proj=utm +zone=10"))
+  all.sf <- st_as_sf(res, coords = c('Long', 'Lat'), crs = st_crs(plumas))
+  all.sf <- st_transform(all.sf, crs=26910)
+  i1 <- st_intersection(all.sf, plumas)
+}
+
+
+
+```
+
+# 2. Load monthly data for each year / extract / save
+Instructions: do 1 month at a time through to writing the .csv file
+Note- will probably need to clear memory and/or restart R every couple of years
+Note- below I only have 2016-2018 for RH. Use whatever your file path is for other years and do the same for temp and wind
+
+```{r}
+jan16 <- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_01_2016.nc"
+feb16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_02_2016.nc"
+mar16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_02_2016.nc"
+apr16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_04_2016.nc"
+may16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_05_2016.nc"
+jun16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_06_2016.nc"
+jul16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_07_2016.nc"
+aug16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_08_2016.nc"
+sep16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_09_2016.nc"
+oct16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_10_2016.nc"
+nov16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_11_2016.nc"
+dec16<- "RH/WRFV1_RH_SFC2016/WRF_RH_SFC_12_2016.nc"
+month16 <- c(jan16, feb16, mar16, apr16, may16, jun16, jul16, aug16, sep16, oct16, nov16, dec16)
+
+list16 <- lapply(month16, fun)
+data16 <- (do.call(cbind, list16))
+
+fwrite(data16, "Routput/Plumas/plumas_rh_2016.csv")
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+jan17 <- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_01_2017.nc"
+feb17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_02_2017.nc"
+mar17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_02_2017.nc"
+apr17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_04_2017.nc"
+may17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_05_2017.nc"
+jun17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_06_2017.nc"
+jul17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_07_2017.nc"
+aug17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_08_2017.nc"
+sep17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_09_2017.nc"
+oct17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_10_2017.nc"
+nov17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_11_2017.nc"
+dec17<- "RH/WRFV1_RH_SFC2017/WRF_RH_SFC_12_2017.nc"
+month17 <- c(jan17, feb17, mar17, apr17, may17, jun17, jul17, aug17, sep17, oct17, nov17, dec17)
+
+list17 <- lapply(month17, fun)
+data17 <- (do.call(cbind, list17))
+
+fwrite(data17, "Routput/Plumas/plumas_rh_2017.csv")
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+jan18 <- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_01_2018.nc"
+feb18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_02_2018.nc"
+mar18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_02_2018.nc"
+apr18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_04_2018.nc"
+may18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_05_2018.nc"
+jun18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_06_2018.nc"
+jul18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_07_2018.nc"
+aug18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_08_2018.nc"
+sep18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_09_2018.nc"
+oct18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_10_2018.nc"
+nov18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_11_2018.nc"
+dec18<- "RH/WRFV1_RH_SFC2018/WRF_RH_SFC_12_2018.nc"
+month18 <- c(jan18, feb18, mar18, apr18, may18, jun18, jul18, aug18, sep18, oct18, nov18, dec18)
+
+list18 <- lapply(month18, fun)
+data18 <- (do.call(cbind, list18))
+
+fwrite(data18, "Routput/Plumas/plumas_rh_2018.csv")
+
+```
+
+# 3. Load annual 100hr fuel moisture data / extract / save
+
+```{r}
+
+y2003 <- "fm100/fm100_2003.nc"
+y2004 <- "fm100/fm100_2004.nc"
+y2005 <- "fm100/fm100_2005.nc"
+y2006 <- "fm100/fm100_2006.nc"
+y2007 <- "fm100/fm100_2007.nc"
+y2008 <- "fm100/fm100_2008.nc"
+y2009 <- "fm100/fm100_2009.nc"
+y2010 <- "fm100/fm100_2010.nc"
+y2011 <- "fm100/fm100_2011.nc"
+y2012 <- "fm100/fm100_2012.nc"
+y2013 <- "fm100/fm100_2013.nc"
+y2014 <- "fm100/fm100_2014.nc"
+y2015 <- "fm100/fm100_2015.nc"
+y2016 <- "fm100/fm100_2016.nc"
+y2017 <- "fm100/fm100_2017.nc"
+y2018 <- "fm100/fm100_2018.nc"
+
+year <- c(y2003, y2004, y2005, y2006, y2007, y2008,
+          y2009, y2010, y2011, y2012, y2013, y2014, y2015, y2016, y2017, y2018)
+
+list <- lapply(year, fun)
+
+data <- do.call(cbind, list)
+fwrite(data, "Routput/fm_plumas.csv")
+
+```
+
+END.

@@ -1,0 +1,871 @@
+---
+title: "Step2_Plumas"
+author: "Christina Fossum"
+date: "2023-09-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Formatting extracted data into veg type and inputting prescription parameters
+
+First, will format the conifer data since that is largest and most complicated code. then Shrub, herbaceous, and hardwood. Then will save second file with addition of social parameters
+
+```{r cars}
+summary(cars)
+```
+
+## 1. Conifer formatting and prescription 
+(1) Filter 1: 10 < fm100 < 20 (do this filter in the merge function)
+(1) Filter 1: Prescription parameters met for 5 consecutive hours 
+(2) Filter 2: Exclude additional combinations of (a) high temp + low RH, & (b) low RH & high wind
+(3) Filter 3: Exclude cases of extreme fire weather for up to 24 hours post burn window
+
+# Conifer
+(1) prescription = T: 50-90, RH: 20-80, wind <10
+(2) Exclude T > 85 & RH < 30 AND RH < 30 & wind > 5
+(3) Extended prescription = T < 100, RH > 20, wind < 15
+
+
+```{r}
+#Copy and paste whichever year group you are working on into the code below this to run. need to do in 4 separate chunks or else computer will crash
+
+r03 <- "Routput/Plumas/plumas_rh_2003.csv"
+r04 <- "Routput/Plumas/plumas_rh_2004.csv"
+r05 <- "Routput/Plumas/plumas_rh_2005.csv"
+r06 <- "Routput/Plumas/plumas_rh_2006.csv"
+r1 <- c(r03, r04, r05, r06)
+
+t03 <- "Routput/Plumas/plumas_temp_2003.csv"
+t04 <- "Routput/Plumas/plumas_temp_2004.csv"
+t05 <- "Routput/Plumas/plumas_temp_2005.csv"
+t06 <- "Routput/Plumas/plumas_temp_2006.csv"
+t1 <- c(t03, t04, t05, t06)
+
+w03 <- "Routput/Plumas/plumas_wind_2003.csv"
+w04 <- "Routput/Plumas/plumas_wind_2004.csv"
+w05 <- "Routput/Plumas/plumas_wind_2005.csv"
+w06 <- "Routput/Plumas/plumas_wind_2006.csv"
+w1 <- c(w03, w04, w05, w06)
+
+r07 <- "Routput/Plumas/plumas_rh_2007.csv"
+r08 <- "Routput/Plumas/plumas_rh_2008.csv"
+r09 <- "Routput/Plumas/plumas_rh_2009.csv"
+r10 <- "Routput/Plumas/plumas_rh_2010.csv"
+r1 <- c(r07, r08, r09, r10)
+
+t07 <- "Routput/Plumas/plumas_temp_2007.csv"
+t08 <- "Routput/Plumas/plumas_temp_2008.csv"
+t09 <- "Routput/Plumas/plumas_temp_2009.csv"
+t10 <- "Routput/Plumas/plumas_temp_2010.csv"
+t1 <- c(t07, t08, t09, t10)
+
+w07 <- "Routput/Plumas/plumas_wind_2007.csv"
+w08 <- "Routput/Plumas/plumas_wind_2008.csv"
+w09 <- "Routput/Plumas/plumas_wind_2009.csv"
+w10 <- "Routput/Plumas/plumas_wind_2010.csv"
+w1 <- c(w07, w08, w09, w10)
+
+r11 <- "Routput/Plumas/plumas_rh_2011.csv"
+r12 <- "Routput/Plumas/plumas_rh_2012.csv"
+r13 <- "Routput/Plumas/plumas_rh_2013.csv"
+r14 <- "Routput/Plumas/plumas_rh_2014.csv"
+r1 <- c(r11, r12, r13, r14)
+
+t11 <- "Routput/Plumas/plumas_temp_2011.csv"
+t12 <- "Routput/Plumas/plumas_temp_2012.csv"
+t13 <- "Routput/Plumas/plumas_temp_2013.csv"
+t14 <- "Routput/Plumas/plumas_temp_2014.csv"
+t1 <- c(t11, t12, t13, t14)
+
+w11 <- "Routput/Plumas/plumas_wind_2011.csv"
+w12 <- "Routput/Plumas/plumas_wind_2012.csv"
+w13 <- "Routput/Plumas/plumas_wind_2013.csv"
+w14 <- "Routput/Plumas/plumas_wind_2014.csv"
+w1 <- c(w11, w12, w13, w14)
+
+r15 <- "Routput/Plumas/plumas_rh_2015.csv"
+r16 <- "Routput/Plumas/plumas_rh_2016.csv"
+r17 <- "Routput/Plumas/plumas_rh_2017.csv"
+r18 <- "Routput/Plumas/plumas_rh_2018.csv"
+r1 <- c(r15, r16, r17, r18)
+
+t15 <- "Routput/Plumas/plumas_temp_2015.csv"
+t16 <- "Routput/Plumas/plumas_temp_2016.csv"
+t17 <- "Routput/Plumas/plumas_temp_2017.csv"
+t18 <- "Routput/Plumas/plumas_temp_2018.csv"
+t1 <- c(t15, t16, t17, t18)
+
+w15 <- "Routput/Plumas/plumas_wind_2015.csv"
+w16 <- "Routput/Plumas/plumas_wind_2016.csv"
+w17 <- "Routput/Plumas/plumas_wind_2017.csv"
+w18 <- "Routput/Plumas/plumas_wind_2018.csv"
+w1 <- c(w15, w16, w17, w18)
+
+
+
+
+```
+
+```{r}
+library(sf)
+library(data.table)
+library(lubridate)
+library(tidyverse)
+
+coords <- fread("fveg/plumas_coords.csv")
+
+fm <- fread("Routput/Plumas/fm_plumas.csv")
+fm <- as.data.frame(fm)
+fm <- cbind(coords, fm)
+fm <- fm %>%  pivot_longer(starts_with("X"),names_to = "datetime",values_to = "fm100")%>% dplyr::select(long, lat, LIFE_FORM, datetime, fm100) 
+
+dates <- seq(ymd('2003-01-01'), ymd('2018-12-31'), by = '1 day')
+dates <- rep(dates, 1587)
+dates <- as.data.frame(dates)
+fm <- cbind(fm, dates)
+fm <- fm %>% mutate(FM100 = fm100/10)%>% filter(FM100 > 10 & FM100 < 20)%>% dplyr::select(-datetime, -fm100)
+fm$dates <- as_date(fm$dates)
+
+fm1 <- fm %>% filter(dates < '2015-01-01' & dates >= '2011-01-01')
+
+r11 <- "Routput/Plumas/plumas_rh_2011.csv"
+r12 <- "Routput/Plumas/plumas_rh_2012.csv"
+r13 <- "Routput/Plumas/plumas_rh_2013.csv"
+r14 <- "Routput/Plumas/plumas_rh_2014.csv"
+r1 <- c(r11, r12, r13, r14)
+
+t11 <- "Routput/Plumas/plumas_temp_2011.csv"
+t12 <- "Routput/Plumas/plumas_temp_2012.csv"
+t13 <- "Routput/Plumas/plumas_temp_2013.csv"
+t14 <- "Routput/Plumas/plumas_temp_2014.csv"
+t1 <- c(t11, t12, t13, t14)
+
+w11 <- "Routput/Plumas/plumas_wind_2011.csv"
+w12 <- "Routput/Plumas/plumas_wind_2012.csv"
+w13 <- "Routput/Plumas/plumas_wind_2013.csv"
+w14 <- "Routput/Plumas/plumas_wind_2014.csv"
+w1 <- c(w11, w12, w13, w14)
+
+num <- c(1:4)
+
+fun_shrub_RH <- function(x){
+  RH <- fread(x)
+  RH2 <- cbind(coords, RH)
+  RH2 <- data.frame(RH2)
+  RH2 <- RH2 %>% filter(LIFE_FORM == "CONIFER") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "RH")
+  RH2 <- RH2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, RH)
+}
+
+fun_shrub_temp <- function(x){
+  temp <- fread(x)
+  temp2 <- cbind(coords, temp)
+  temp2 <- data.frame(temp2)
+  temp2 <- temp2 %>% filter(LIFE_FORM == "CONIFER") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "temp")
+  temp2 <- temp2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, temp)
+}
+
+fun_shrub_wind <- function(x){
+  wind <- fread(x)
+  wind2 <- cbind(coords, wind)
+  wind2<- data.frame(wind2)
+  wind2 <- wind2 %>% filter(LIFE_FORM == "CONIFER") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "windspeed")
+  
+  wind2 <- wind2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, windspeed)
+}
+
+fun_combi <- function(x){
+  shrub_T_RH <- list_r1[[x]] %>% left_join(list_t1[[x]], keep = TRUE)
+  shrub_T_RH <- na.omit(shrub_T_RH)
+  shrubt_T_RH <- shrub_T_RH %>% rename(c(long = 'long.x', lat = 'lat.x', LIFE_FORM = 'LIFE_FORM.x',
+                                         datetime = 'datetime.x'))
+}
+fun_combi2 <- function(x){
+  shrub_weather <- list_rt1[[x]] %>% left_join(list_w1[[x]], keep = TRUE)
+  shrub_weather <- na.omit(shrub_weather)
+  shrub_weather <- shrub_weather %>% dplyr::select(long.x, lat.x, LIFE_FORM.x, datetime.x, RH,
+                                            temp, windspeed)
+} 
+
+
+
+
+
+
+fun_prescription <- function(x){
+  data <- as.data.frame(list_rtw1[[x]])
+  data <- data %>% mutate(datetime = str_sub(datetime.x, 2, -1))
+  data$datetime <- as_datetime(data$datetime)
+  data <- data %>% mutate(date = as_date(datetime)) %>% rename(long = "long.x", lat = "lat.x", LIFE_FORM = "LIFE_FORM.x", dates = "date") %>% dplyr::select(-datetime.x)
+  data <- left_join(data, fm1)
+  
+  data <- data %>% group_by(long, lat) %>% mutate(rin = case_when(RH >= 20 & RH <= 80  ~ 0, .default = 1)) %>% 
+  mutate(tin = case_when(temp >= 50 & temp <= 90  ~ 0, .default = 1)) %>% 
+  mutate(win = case_when(windspeed < 10 ~ 0, .default = 1)) %>% 
+  mutate(tr = case_when(temp > 85 & RH < 25 ~ 1, .default = 0), wr = case_when(windspeed > 5 & RH < 25 ~ 1, .default = 0)) %>% 
+  mutate(inscrip = rin + tin + win + tr + wr) %>% 
+  mutate(inscrip_ext = case_when(RH > 10 & temp < 100 & windspeed < 15 ~ 0, .default = 1)) %>% ungroup()
+data <- data %>% dplyr::filter(inscrip == 0 & lead(inscrip) == 0 & lag(inscrip) == 0 & lead(inscrip, 2) == 0 & lag(inscrip, 2) == 0 & inscrip_ext == 0 & lag(inscrip_ext) == 0 & lag(inscrip_ext, 2) == 0 & lag(inscrip_ext, 3) == 0 & lag(inscrip_ext, 4)            == 0 & lag(inscrip_ext, 5) == 0 & lag(inscrip_ext, 6) == 0 & lag(inscrip_ext, 7) == 0 & lag(inscrip_ext, 8) == 0 &              lag(inscrip_ext, 9) == 0 & lag(inscrip_ext, 10) == 0 & lag(inscrip_ext, 11) == 0 & lag(inscrip_ext, 12) == 0 &                  lag(inscrip_ext, 13) == 0 & lag(inscrip_ext, 14) == 0 & lag(inscrip_ext, 15) == 0 & lag(inscrip_ext, 16) == 0 &                 lag(inscrip_ext, 17) == 0 & lag(inscrip_ext, 18) == 0 & lag(inscrip_ext, 19) == 0 & lag(inscrip_ext, 20) == 0 &                 lag(inscrip_ext, 21) == 0 & lag(inscrip_ext, 22) == 0 & lag(inscrip_ext, 23) == 0 & lag(inscrip_ext, 24) == 0) %>%              ungroup()
+
+  data <- data %>% dplyr::select(-rin, -tin, -win, -inscrip, -tr, -wr, -inscrip_ext)
+  data <- data %>% mutate(year = year(dates), month = month(dates), day = day(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer"))
+  
+  data <- data %>% group_by(long, lat, LIFE_FORM, dates, year, month, day, season) %>% summarise(n = n(), maxT = max(temp), minT = min(temp), avgT = mean(temp), maxRH = max(RH), minRH = min(RH), avgRH = mean(RH), maxW = max(windspeed), meanW = mean(windspeed), fm = FM100)
+}
+
+
+
+list_r1 <- lapply(r1, fun_shrub_RH)
+list_t1 <- lapply(t1, fun_shrub_temp)
+list_w1 <- lapply(w1, fun_shrub_wind)
+
+list_rt1 <- lapply(num, fun_combi)
+list_rtw1 <- lapply(num, fun_combi2)
+
+list_prescription_1 <- lapply(num, fun_prescription)
+prescription1_df <- do.call(rbind, list_prescription_1)
+prescription1_df <- na.omit(prescription1_df)
+fwrite(prescription1_df, "plumas_con3_TEMP.csv")
+
+
+```
+
+```{r}
+library(data.table)
+con1 <- fread("plumas_con1_TEMP.csv")
+con2 <- fread("plumas_con2_TEMP.csv")
+con3 <- fread("plumas_con3_TEMP.csv")
+con4 <- fread("plumas_con4_TEMP.csv")
+
+conifer <- rbind(con1, con2)
+conifer <- rbind(conifer, con3)
+conifer <- rbind(conifer, con4)
+
+fwrite(conifer, "Routput/Plumas/plumas_conifer_prescription.csv")
+
+```
+
+## 2. Shrub, Herbaceous, Hardwood
+
+
+
+
+
+# Hardwood
+(1) prescription = T: 50-90, RH: 20-70, wind <10
+(2) Exclude T > 85 & RH < 30 AND RH < 30 & wind > 5
+(3) Extended prescription = T < 100, RH > 20, wind < 15
+
+```{r}
+library(sf)
+library(data.table)
+library(lubridate)
+library(tidyverse)
+
+coords <- fread("fveg/plumas_coords.csv")
+
+fm <- fread("Routput/Plumas/fm_plumas.csv")
+fm <- as.data.frame(fm)
+fm <- cbind(coords, fm)
+fm <- fm %>%  pivot_longer(starts_with("X"),names_to = "datetime",values_to = "fm100")%>% dplyr::select(long, lat, LIFE_FORM, datetime, fm100) 
+
+dates <- seq(ymd('2003-01-01'), ymd('2018-12-31'), by = '1 day')
+dates <- rep(dates, 1587)
+dates <- as.data.frame(dates)
+fm <- cbind(fm, dates)
+fm <- fm %>% mutate(FM100 = fm100/10)%>% filter(FM100 > 10 & FM100 < 20)%>% dplyr::select(-datetime, -fm100)
+fm$dates <- as_date(fm$dates)
+
+
+
+
+r03 <- "Routput/Plumas/plumas_rh_2003.csv"
+r04 <- "Routput/Plumas/plumas_rh_2004.csv"
+r05 <- "Routput/Plumas/plumas_rh_2005.csv"
+r06 <- "Routput/Plumas/plumas_rh_2006.csv"
+r07 <- "Routput/Plumas/plumas_rh_2007.csv"
+r08 <- "Routput/Plumas/plumas_rh_2008.csv"
+r09 <- "Routput/Plumas/plumas_rh_2009.csv"
+r10 <- "Routput/Plumas/plumas_rh_2010.csv"
+r11 <- "Routput/Plumas/plumas_rh_2011.csv"
+r12 <- "Routput/Plumas/plumas_rh_2012.csv"
+r13 <- "Routput/Plumas/plumas_rh_2013.csv"
+r14 <- "Routput/Plumas/plumas_rh_2014.csv"
+r15 <- "Routput/Plumas/plumas_rh_2015.csv"
+r16 <- "Routput/Plumas/plumas_rh_2016.csv"
+r17 <- "Routput/Plumas/plumas_rh_2017.csv"
+r18 <- "Routput/Plumas/plumas_rh_2018.csv"
+r <- c(r03, r04, r05, r06, r07, r08, r09, r10, r11, r12, r13, r14, r15, r16, r17, r18)
+
+t03 <- "Routput/Plumas/plumas_temp_2003.csv"
+t04 <- "Routput/Plumas/plumas_temp_2004.csv"
+t05 <- "Routput/Plumas/plumas_temp_2005.csv"
+t06 <- "Routput/Plumas/plumas_temp_2006.csv"
+t07 <- "Routput/Plumas/plumas_temp_2007.csv"
+t08 <- "Routput/Plumas/plumas_temp_2008.csv"
+t09 <- "Routput/Plumas/plumas_temp_2009.csv"
+t10 <- "Routput/Plumas/plumas_temp_2010.csv"
+t11 <- "Routput/Plumas/plumas_temp_2011.csv"
+t12 <- "Routput/Plumas/plumas_temp_2012.csv"
+t13 <- "Routput/Plumas/plumas_temp_2013.csv"
+t14 <- "Routput/Plumas/plumas_temp_2014.csv"
+t15 <- "Routput/Plumas/plumas_temp_2015.csv"
+t16 <- "Routput/Plumas/plumas_temp_2016.csv"
+t17 <- "Routput/Plumas/plumas_temp_2017.csv"
+t18 <- "Routput/Plumas/plumas_temp_2018.csv"
+t <- c(t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13, t14, t15, t16, t17, t18)
+
+w03 <- "Routput/Plumas/plumas_wind_2003.csv"
+w04 <- "Routput/Plumas/plumas_wind_2004.csv"
+w05 <- "Routput/Plumas/plumas_wind_2005.csv"
+w06 <- "Routput/Plumas/plumas_wind_2006.csv"
+w07 <- "Routput/Plumas/plumas_wind_2007.csv"
+w08 <- "Routput/Plumas/plumas_wind_2008.csv"
+w09 <- "Routput/Plumas/plumas_wind_2009.csv"
+w10 <- "Routput/Plumas/plumas_wind_2010.csv"
+w11 <- "Routput/Plumas/plumas_wind_2011.csv"
+w12 <- "Routput/Plumas/plumas_wind_2012.csv"
+w13 <- "Routput/Plumas/plumas_wind_2013.csv"
+w14 <- "Routput/Plumas/plumas_wind_2014.csv"
+w15 <- "Routput/Plumas/plumas_wind_2015.csv"
+w16 <- "Routput/Plumas/plumas_wind_2016.csv"
+w17 <- "Routput/Plumas/plumas_wind_2017.csv"
+w18 <- "Routput/Plumas/plumas_wind_2018.csv"
+w <- c(w03, w04, w05, w06, w07, w08, w09, w10, w11, w12, w13, w14, w15, w16, w17, w18)
+
+num <- c(1:16)
+
+fun_shrub_RH <- function(x){
+  RH <- fread(x)
+  RH2 <- cbind(coords, RH)
+  RH2 <- data.frame(RH2)
+  RH2 <- RH2 %>% filter(LIFE_FORM == "HARDWOOD") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "RH")
+  RH2 <- RH2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, RH)
+}
+
+fun_shrub_temp <- function(x){
+  temp <- fread(x)
+  temp2 <- cbind(coords, temp)
+  temp2 <- data.frame(temp2)
+  temp2 <- temp2 %>% filter(LIFE_FORM == "HARDWOOD") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "temp")
+  temp2 <- temp2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, temp)
+}
+
+fun_shrub_wind <- function(x){
+  wind <- fread(x)
+  wind2 <- cbind(coords, wind)
+  wind2<- data.frame(wind2)
+  wind2 <- wind2 %>% filter(LIFE_FORM == "HARDWOOD") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "windspeed")
+  
+  wind2 <- wind2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, windspeed)
+}
+
+fun_combi <- function(x){
+  shrub_T_RH <- list_r1[[x]] %>% left_join(list_t1[[x]], keep = TRUE)
+  shrub_T_RH <- na.omit(shrub_T_RH)
+  shrubt_T_RH <- shrub_T_RH %>% rename(c(long = 'long.x', lat = 'lat.x', LIFE_FORM = 'LIFE_FORM.x',
+                                         datetime = 'datetime.x'))
+}
+fun_combi2 <- function(x){
+  shrub_weather <- list_rt1[[x]] %>% left_join(list_w1[[x]], keep = TRUE)
+  shrub_weather <- na.omit(shrub_weather)
+  shrub_weather <- shrub_weather %>% dplyr::select(long.x, lat.x, LIFE_FORM.x, datetime.x, RH,
+                                            temp, windspeed)
+} 
+
+list_r1 <- lapply(r, fun_shrub_RH)
+list_t1 <- lapply(t, fun_shrub_temp)
+list_w1 <- lapply(w, fun_shrub_wind)
+
+list_rt1 <- lapply(num, fun_combi)
+list_rtw1 <- lapply(num, fun_combi2)
+
+
+
+
+fun_prescription <- function(x){
+  data <- as.data.frame(list_rtw1[[x]])
+  data <- data %>% mutate(datetime = str_sub(datetime.x, 2, -1))
+  data$datetime <- as_datetime(data$datetime)
+  data <- data %>% mutate(date = as_date(datetime)) %>% rename(long = "long.x", lat = "lat.x", LIFE_FORM = "LIFE_FORM.x", dates = "date") %>% dplyr::select(-datetime.x)
+  data <- left_join(data, fm)
+  
+  data <- data %>% group_by(long, lat) %>% mutate(rin = case_when(RH >= 20 & RH <= 70  ~ 0, .default = 1)) %>% 
+  mutate(tin = case_when(temp >= 50 & temp <= 90  ~ 0, .default = 1)) %>% 
+  mutate(win = case_when(windspeed < 10 ~ 0, .default = 1)) %>% 
+  mutate(tr = case_when(temp > 85 & RH < 30 ~ 1, .default = 0), wr = case_when(windspeed > 5 & RH < 30 ~ 1, .default = 0)) %>% 
+  mutate(inscrip = rin + tin + win + tr + wr) %>% 
+  mutate(inscrip_ext = case_when(RH > 20 & temp < 100 & windspeed < 15 ~ 0, .default = 1)) %>% ungroup()
+data <- data %>% dplyr::filter(inscrip == 0 & lead(inscrip) == 0 & lag(inscrip) == 0 & lead(inscrip, 2) == 0 & lag(inscrip, 2) == 0 & inscrip_ext == 0 & lag(inscrip_ext) == 0 & lag(inscrip_ext, 2) == 0 & lag(inscrip_ext, 3) == 0 & lag(inscrip_ext, 4)            == 0 & lag(inscrip_ext, 5) == 0 & lag(inscrip_ext, 6) == 0 & lag(inscrip_ext, 7) == 0 & lag(inscrip_ext, 8) == 0 &              lag(inscrip_ext, 9) == 0 & lag(inscrip_ext, 10) == 0 & lag(inscrip_ext, 11) == 0 & lag(inscrip_ext, 12) == 0 &                  lag(inscrip_ext, 13) == 0 & lag(inscrip_ext, 14) == 0 & lag(inscrip_ext, 15) == 0 & lag(inscrip_ext, 16) == 0 &                 lag(inscrip_ext, 17) == 0 & lag(inscrip_ext, 18) == 0 & lag(inscrip_ext, 19) == 0 & lag(inscrip_ext, 20) == 0 &                 lag(inscrip_ext, 21) == 0 & lag(inscrip_ext, 22) == 0 & lag(inscrip_ext, 23) == 0 & lag(inscrip_ext, 24) == 0) %>%              ungroup()
+
+  data <- data %>% dplyr::select(-rin, -tin, -win, -inscrip, -tr, -wr, -inscrip_ext)
+  data <- data %>% mutate(year = year(dates), month = month(dates), day = day(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer"))
+  
+  data <- data %>% group_by(long, lat, LIFE_FORM, dates, year, month, day, season) %>% summarise(n = n(), maxT = max(temp), minT = min(temp), avgT = mean(temp), maxRH = max(RH), minRH = min(RH), avgRH = mean(RH), maxW = max(windspeed), meanW = mean(windspeed), fm = FM100)
+}
+
+
+
+
+
+list_prescription_1 <- lapply(num, fun_prescription)
+prescription1_df <- do.call(rbind, list_prescription_1)
+prescription1_df <- na.omit(prescription1_df)
+
+fwrite(prescription1_df, "plumas_hardwood_prescription.csv")
+
+
+```
+
+# Shrub
+(1) prescription = T: 50-90, RH: 30-70, wind <10
+(2) Exclude T > 85 & RH < 35 AND RH < 35 & wind > 5
+(3) Extended prescription = T < 100, RH > 20, wind < 15
+```{r}
+library(sf)
+library(data.table)
+library(lubridate)
+library(tidyverse)
+
+coords <- fread("fveg/plumas_coords.csv")
+
+fm <- fread("Routput/Plumas/fm_plumas.csv")
+fm <- as.data.frame(fm)
+fm <- cbind(coords, fm)
+fm <- fm %>%  pivot_longer(starts_with("X"),names_to = "datetime",values_to = "fm100")%>% dplyr::select(long, lat, LIFE_FORM, datetime, fm100) 
+
+dates <- seq(ymd('2003-01-01'), ymd('2018-12-31'), by = '1 day')
+dates <- rep(dates, 1587)
+dates <- as.data.frame(dates)
+fm <- cbind(fm, dates)
+fm <- fm %>% mutate(FM100 = fm100/10)%>% filter(FM100 > 10 & FM100 < 20)%>% dplyr::select(-datetime, -fm100)
+fm$dates <- as_date(fm$dates)
+
+
+
+
+r03 <- "Routput/Plumas/plumas_rh_2003.csv"
+r04 <- "Routput/Plumas/plumas_rh_2004.csv"
+r05 <- "Routput/Plumas/plumas_rh_2005.csv"
+r06 <- "Routput/Plumas/plumas_rh_2006.csv"
+r07 <- "Routput/Plumas/plumas_rh_2007.csv"
+r08 <- "Routput/Plumas/plumas_rh_2008.csv"
+r09 <- "Routput/Plumas/plumas_rh_2009.csv"
+r10 <- "Routput/Plumas/plumas_rh_2010.csv"
+r11 <- "Routput/Plumas/plumas_rh_2011.csv"
+r12 <- "Routput/Plumas/plumas_rh_2012.csv"
+r13 <- "Routput/Plumas/plumas_rh_2013.csv"
+r14 <- "Routput/Plumas/plumas_rh_2014.csv"
+r15 <- "Routput/Plumas/plumas_rh_2015.csv"
+r16 <- "Routput/Plumas/plumas_rh_2016.csv"
+r17 <- "Routput/Plumas/plumas_rh_2017.csv"
+r18 <- "Routput/Plumas/plumas_rh_2018.csv"
+r <- c(r03, r04, r05, r06, r07, r08, r09, r10, r11, r12, r13, r14, r15, r16, r17, r18)
+
+t03 <- "Routput/Plumas/plumas_temp_2003.csv"
+t04 <- "Routput/Plumas/plumas_temp_2004.csv"
+t05 <- "Routput/Plumas/plumas_temp_2005.csv"
+t06 <- "Routput/Plumas/plumas_temp_2006.csv"
+t07 <- "Routput/Plumas/plumas_temp_2007.csv"
+t08 <- "Routput/Plumas/plumas_temp_2008.csv"
+t09 <- "Routput/Plumas/plumas_temp_2009.csv"
+t10 <- "Routput/Plumas/plumas_temp_2010.csv"
+t11 <- "Routput/Plumas/plumas_temp_2011.csv"
+t12 <- "Routput/Plumas/plumas_temp_2012.csv"
+t13 <- "Routput/Plumas/plumas_temp_2013.csv"
+t14 <- "Routput/Plumas/plumas_temp_2014.csv"
+t15 <- "Routput/Plumas/plumas_temp_2015.csv"
+t16 <- "Routput/Plumas/plumas_temp_2016.csv"
+t17 <- "Routput/Plumas/plumas_temp_2017.csv"
+t18 <- "Routput/Plumas/plumas_temp_2018.csv"
+t <- c(t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13, t14, t15, t16, t17, t18)
+
+w03 <- "Routput/Plumas/plumas_wind_2003.csv"
+w04 <- "Routput/Plumas/plumas_wind_2004.csv"
+w05 <- "Routput/Plumas/plumas_wind_2005.csv"
+w06 <- "Routput/Plumas/plumas_wind_2006.csv"
+w07 <- "Routput/Plumas/plumas_wind_2007.csv"
+w08 <- "Routput/Plumas/plumas_wind_2008.csv"
+w09 <- "Routput/Plumas/plumas_wind_2009.csv"
+w10 <- "Routput/Plumas/plumas_wind_2010.csv"
+w11 <- "Routput/Plumas/plumas_wind_2011.csv"
+w12 <- "Routput/Plumas/plumas_wind_2012.csv"
+w13 <- "Routput/Plumas/plumas_wind_2013.csv"
+w14 <- "Routput/Plumas/plumas_wind_2014.csv"
+w15 <- "Routput/Plumas/plumas_wind_2015.csv"
+w16 <- "Routput/Plumas/plumas_wind_2016.csv"
+w17 <- "Routput/Plumas/plumas_wind_2017.csv"
+w18 <- "Routput/Plumas/plumas_wind_2018.csv"
+w <- c(w03, w04, w05, w06, w07, w08, w09, w10, w11, w12, w13, w14, w15, w16, w17, w18)
+
+num <- c(1:16)
+
+fun_shrub_RH <- function(x){
+  RH <- fread(x)
+  RH2 <- cbind(coords, RH)
+  RH2 <- data.frame(RH2)
+  RH2 <- RH2 %>% filter(LIFE_FORM == "SHRUB") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "RH")
+  RH2 <- RH2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, RH)
+}
+
+fun_shrub_temp <- function(x){
+  temp <- fread(x)
+  temp2 <- cbind(coords, temp)
+  temp2 <- data.frame(temp2)
+  temp2 <- temp2 %>% filter(LIFE_FORM == "SHRUB") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "temp")
+  temp2 <- temp2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, temp)
+}
+
+fun_shrub_wind <- function(x){
+  wind <- fread(x)
+  wind2 <- cbind(coords, wind)
+  wind2<- data.frame(wind2)
+  wind2 <- wind2 %>% filter(LIFE_FORM == "SHRUB") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "windspeed")
+  
+  wind2 <- wind2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, windspeed)
+}
+
+fun_combi <- function(x){
+  shrub_T_RH <- list_r1[[x]] %>% left_join(list_t1[[x]], keep = TRUE)
+  shrub_T_RH <- na.omit(shrub_T_RH)
+  shrubt_T_RH <- shrub_T_RH %>% rename(c(long = 'long.x', lat = 'lat.x', LIFE_FORM = 'LIFE_FORM.x',
+                                         datetime = 'datetime.x'))
+}
+fun_combi2 <- function(x){
+  shrub_weather <- list_rt1[[x]] %>% left_join(list_w1[[x]], keep = TRUE)
+  shrub_weather <- na.omit(shrub_weather)
+  shrub_weather <- shrub_weather %>% dplyr::select(long.x, lat.x, LIFE_FORM.x, datetime.x, RH,
+                                            temp, windspeed)
+} 
+
+list_r1 <- lapply(r, fun_shrub_RH)
+list_t1 <- lapply(t, fun_shrub_temp)
+list_w1 <- lapply(w, fun_shrub_wind)
+
+list_rt1 <- lapply(num, fun_combi)
+list_rtw1 <- lapply(num, fun_combi2)
+
+
+
+
+fun_prescription <- function(x){
+  data <- as.data.frame(list_rtw1[[x]])
+  data <- data %>% mutate(datetime = str_sub(datetime.x, 2, -1))
+  data$datetime <- as_datetime(data$datetime)
+  data <- data %>% mutate(date = as_date(datetime)) %>% rename(long = "long.x", lat = "lat.x", LIFE_FORM = "LIFE_FORM.x", dates = "date") %>% dplyr::select(-datetime.x)
+  data <- left_join(data, fm)
+  
+  data <- data %>% group_by(long, lat) %>% mutate(rin = case_when(RH >= 30 & RH <= 70  ~ 0, .default = 1)) %>% 
+  mutate(tin = case_when(temp >= 50 & temp <= 90  ~ 0, .default = 1)) %>% 
+  mutate(win = case_when(windspeed < 10 ~ 0, .default = 1)) %>% 
+  mutate(tr = case_when(temp > 85 & RH < 35 ~ 1, .default = 0), wr = case_when(windspeed > 5 & RH < 35 ~ 1, .default = 0)) %>% 
+  mutate(inscrip = rin + tin + win + tr + wr) %>% 
+  mutate(inscrip_ext = case_when(RH > 20 & temp < 100 & windspeed < 15 ~ 0, .default = 1)) %>% ungroup()
+data <- data %>% dplyr::filter(inscrip == 0 & lead(inscrip) == 0 & lag(inscrip) == 0 & lead(inscrip, 2) == 0 & lag(inscrip, 2) == 0 & inscrip_ext == 0 & lag(inscrip_ext) == 0 & lag(inscrip_ext, 2) == 0 & lag(inscrip_ext, 3) == 0 & lag(inscrip_ext, 4)            == 0 & lag(inscrip_ext, 5) == 0 & lag(inscrip_ext, 6) == 0 & lag(inscrip_ext, 7) == 0 & lag(inscrip_ext, 8) == 0 &              lag(inscrip_ext, 9) == 0 & lag(inscrip_ext, 10) == 0 & lag(inscrip_ext, 11) == 0 & lag(inscrip_ext, 12) == 0 &                  lag(inscrip_ext, 13) == 0 & lag(inscrip_ext, 14) == 0 & lag(inscrip_ext, 15) == 0 & lag(inscrip_ext, 16) == 0 &                 lag(inscrip_ext, 17) == 0 & lag(inscrip_ext, 18) == 0 & lag(inscrip_ext, 19) == 0 & lag(inscrip_ext, 20) == 0 &                 lag(inscrip_ext, 21) == 0 & lag(inscrip_ext, 22) == 0 & lag(inscrip_ext, 23) == 0 & lag(inscrip_ext, 24) == 0) %>%              ungroup()
+
+  data <- data %>% dplyr::select(-rin, -tin, -win, -inscrip, -tr, -wr, -inscrip_ext)
+  data <- data %>% mutate(year = year(dates), month = month(dates), day = day(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer"))
+  
+  data <- data %>% group_by(long, lat, LIFE_FORM, dates, year, month, day, season) %>% summarise(n = n(), maxT = max(temp), minT = min(temp), avgT = mean(temp), maxRH = max(RH), minRH = min(RH), avgRH = mean(RH), maxW = max(windspeed), meanW = mean(windspeed), fm = FM100)
+}
+
+
+
+
+
+list_prescription_1 <- lapply(num, fun_prescription)
+prescription1_df <- do.call(rbind, list_prescription_1)
+prescription1_df <- na.omit(prescription1_df)
+
+fwrite(prescription1_df, "plumas_shrub_prescription.csv")
+
+
+
+
+
+```
+
+# Herbaceous
+(1) prescription = T: 50-90, RH: 40-70, wind <10
+(2) Exclude T > 85 & RH < 45 AND RH < 35 & wind > 5
+(3) Extended prescription = T < 100, RH > 30, wind < 15
+```{r}
+library(sf)
+library(data.table)
+library(lubridate)
+library(tidyverse)
+
+coords <- fread("fveg/plumas_coords.csv")
+
+fm <- fread("Routput/Plumas/fm_plumas.csv")
+fm <- as.data.frame(fm)
+fm <- cbind(coords, fm)
+fm <- fm %>%  pivot_longer(starts_with("X"),names_to = "datetime",values_to = "fm100")%>% dplyr::select(long, lat, LIFE_FORM, datetime, fm100) 
+
+dates <- seq(ymd('2003-01-01'), ymd('2018-12-31'), by = '1 day')
+dates <- rep(dates, 1587)
+dates <- as.data.frame(dates)
+fm <- cbind(fm, dates)
+fm <- fm %>% mutate(FM100 = fm100/10)%>% filter(FM100 > 10 & FM100 < 20)%>% dplyr::select(-datetime, -fm100)
+fm$dates <- as_date(fm$dates)
+
+
+
+
+r03 <- "Routput/Plumas/plumas_rh_2003.csv"
+r04 <- "Routput/Plumas/plumas_rh_2004.csv"
+r05 <- "Routput/Plumas/plumas_rh_2005.csv"
+r06 <- "Routput/Plumas/plumas_rh_2006.csv"
+r07 <- "Routput/Plumas/plumas_rh_2007.csv"
+r08 <- "Routput/Plumas/plumas_rh_2008.csv"
+r09 <- "Routput/Plumas/plumas_rh_2009.csv"
+r10 <- "Routput/Plumas/plumas_rh_2010.csv"
+r11 <- "Routput/Plumas/plumas_rh_2011.csv"
+r12 <- "Routput/Plumas/plumas_rh_2012.csv"
+r13 <- "Routput/Plumas/plumas_rh_2013.csv"
+r14 <- "Routput/Plumas/plumas_rh_2014.csv"
+r15 <- "Routput/Plumas/plumas_rh_2015.csv"
+r16 <- "Routput/Plumas/plumas_rh_2016.csv"
+r17 <- "Routput/Plumas/plumas_rh_2017.csv"
+r18 <- "Routput/Plumas/plumas_rh_2018.csv"
+r <- c(r03, r04, r05, r06, r07, r08, r09, r10, r11, r12, r13, r14, r15, r16, r17, r18)
+
+t03 <- "Routput/Plumas/plumas_temp_2003.csv"
+t04 <- "Routput/Plumas/plumas_temp_2004.csv"
+t05 <- "Routput/Plumas/plumas_temp_2005.csv"
+t06 <- "Routput/Plumas/plumas_temp_2006.csv"
+t07 <- "Routput/Plumas/plumas_temp_2007.csv"
+t08 <- "Routput/Plumas/plumas_temp_2008.csv"
+t09 <- "Routput/Plumas/plumas_temp_2009.csv"
+t10 <- "Routput/Plumas/plumas_temp_2010.csv"
+t11 <- "Routput/Plumas/plumas_temp_2011.csv"
+t12 <- "Routput/Plumas/plumas_temp_2012.csv"
+t13 <- "Routput/Plumas/plumas_temp_2013.csv"
+t14 <- "Routput/Plumas/plumas_temp_2014.csv"
+t15 <- "Routput/Plumas/plumas_temp_2015.csv"
+t16 <- "Routput/Plumas/plumas_temp_2016.csv"
+t17 <- "Routput/Plumas/plumas_temp_2017.csv"
+t18 <- "Routput/Plumas/plumas_temp_2018.csv"
+t <- c(t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13, t14, t15, t16, t17, t18)
+
+w03 <- "Routput/Plumas/plumas_wind_2003.csv"
+w04 <- "Routput/Plumas/plumas_wind_2004.csv"
+w05 <- "Routput/Plumas/plumas_wind_2005.csv"
+w06 <- "Routput/Plumas/plumas_wind_2006.csv"
+w07 <- "Routput/Plumas/plumas_wind_2007.csv"
+w08 <- "Routput/Plumas/plumas_wind_2008.csv"
+w09 <- "Routput/Plumas/plumas_wind_2009.csv"
+w10 <- "Routput/Plumas/plumas_wind_2010.csv"
+w11 <- "Routput/Plumas/plumas_wind_2011.csv"
+w12 <- "Routput/Plumas/plumas_wind_2012.csv"
+w13 <- "Routput/Plumas/plumas_wind_2013.csv"
+w14 <- "Routput/Plumas/plumas_wind_2014.csv"
+w15 <- "Routput/Plumas/plumas_wind_2015.csv"
+w16 <- "Routput/Plumas/plumas_wind_2016.csv"
+w17 <- "Routput/Plumas/plumas_wind_2017.csv"
+w18 <- "Routput/Plumas/plumas_wind_2018.csv"
+w <- c(w03, w04, w05, w06, w07, w08, w09, w10, w11, w12, w13, w14, w15, w16, w17, w18)
+
+num <- c(1:16)
+
+fun_shrub_RH <- function(x){
+  RH <- fread(x)
+  RH2 <- cbind(coords, RH)
+  RH2 <- data.frame(RH2)
+  RH2 <- RH2 %>% filter(LIFE_FORM == "HERBACEOUS") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "RH")
+  RH2 <- RH2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, RH)
+}
+
+fun_shrub_temp <- function(x){
+  temp <- fread(x)
+  temp2 <- cbind(coords, temp)
+  temp2 <- data.frame(temp2)
+  temp2 <- temp2 %>% filter(LIFE_FORM == "HERBACEOUS") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "temp")
+  temp2 <- temp2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, temp)
+}
+
+fun_shrub_wind <- function(x){
+  wind <- fread(x)
+  wind2 <- cbind(coords, wind)
+  wind2<- data.frame(wind2)
+  wind2 <- wind2 %>% filter(LIFE_FORM == "HERBACEOUS") %>%
+    pivot_longer(starts_with("X"),names_to = "datetime",values_to = "windspeed")
+  
+  wind2 <- wind2 %>% dplyr::select(long, lat, LIFE_FORM, datetime, windspeed)
+}
+
+fun_combi <- function(x){
+  shrub_T_RH <- list_r1[[x]] %>% left_join(list_t1[[x]], keep = TRUE)
+  shrub_T_RH <- na.omit(shrub_T_RH)
+  shrubt_T_RH <- shrub_T_RH %>% rename(c(long = 'long.x', lat = 'lat.x', LIFE_FORM = 'LIFE_FORM.x',
+                                         datetime = 'datetime.x'))
+}
+fun_combi2 <- function(x){
+  shrub_weather <- list_rt1[[x]] %>% left_join(list_w1[[x]], keep = TRUE)
+  shrub_weather <- na.omit(shrub_weather)
+  shrub_weather <- shrub_weather %>% dplyr::select(long.x, lat.x, LIFE_FORM.x, datetime.x, RH,
+                                            temp, windspeed)
+} 
+
+list_r1 <- lapply(r, fun_shrub_RH)
+list_t1 <- lapply(t, fun_shrub_temp)
+list_w1 <- lapply(w, fun_shrub_wind)
+
+list_rt1 <- lapply(num, fun_combi)
+list_rtw1 <- lapply(num, fun_combi2)
+
+
+
+
+fun_prescription <- function(x){
+  data <- as.data.frame(list_rtw1[[x]])
+  data <- data %>% mutate(datetime = str_sub(datetime.x, 2, -1))
+  data$datetime <- as_datetime(data$datetime)
+  data <- data %>% mutate(date = as_date(datetime)) %>% rename(long = "long.x", lat = "lat.x", LIFE_FORM = "LIFE_FORM.x", dates = "date") %>% dplyr::select(-datetime.x)
+  data <- left_join(data, fm)
+  
+  data <- data %>% group_by(long, lat) %>% mutate(rin = case_when(RH >= 40 & RH <= 70  ~ 0, .default = 1)) %>% 
+  mutate(tin = case_when(temp >= 50 & temp <= 90  ~ 0, .default = 1)) %>% 
+  mutate(win = case_when(windspeed < 10 ~ 0, .default = 1)) %>% 
+  mutate(tr = case_when(temp > 85 & RH < 45 ~ 1, .default = 0), wr = case_when(windspeed > 5 & RH < 45 ~ 1, .default = 0)) %>% 
+  mutate(inscrip = rin + tin + win + tr + wr) %>% 
+  mutate(inscrip_ext = case_when(RH > 20 & temp < 100 & windspeed < 15 ~ 0, .default = 1)) %>% ungroup()
+data <- data %>% dplyr::filter(inscrip == 0 & lead(inscrip) == 0 & lag(inscrip) == 0 & lead(inscrip, 2) == 0 & lag(inscrip, 2) == 0 & inscrip_ext == 0 & lag(inscrip_ext) == 0 & lag(inscrip_ext, 2) == 0 & lag(inscrip_ext, 3) == 0 & lag(inscrip_ext, 4)            == 0 & lag(inscrip_ext, 5) == 0 & lag(inscrip_ext, 6) == 0 & lag(inscrip_ext, 7) == 0 & lag(inscrip_ext, 8) == 0 &              lag(inscrip_ext, 9) == 0 & lag(inscrip_ext, 10) == 0 & lag(inscrip_ext, 11) == 0 & lag(inscrip_ext, 12) == 0 &                  lag(inscrip_ext, 13) == 0 & lag(inscrip_ext, 14) == 0 & lag(inscrip_ext, 15) == 0 & lag(inscrip_ext, 16) == 0 &                 lag(inscrip_ext, 17) == 0 & lag(inscrip_ext, 18) == 0 & lag(inscrip_ext, 19) == 0 & lag(inscrip_ext, 20) == 0 &                 lag(inscrip_ext, 21) == 0 & lag(inscrip_ext, 22) == 0 & lag(inscrip_ext, 23) == 0 & lag(inscrip_ext, 24) == 0) %>%              ungroup()
+
+  data <- data %>% dplyr::select(-rin, -tin, -win, -inscrip, -tr, -wr, -inscrip_ext)
+  data <- data %>% mutate(year = year(dates), month = month(dates), day = day(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer"))
+  
+  data <- data %>% group_by(long, lat, LIFE_FORM, dates, year, month, day, season) %>% summarise(n = n(), maxT = max(temp), minT = min(temp), avgT = mean(temp), maxRH = max(RH), minRH = min(RH), avgRH = mean(RH), maxW = max(windspeed), meanW = mean(windspeed), fm = FM100)
+}
+
+
+
+
+
+list_prescription_1 <- lapply(num, fun_prescription)
+prescription1_df <- do.call(rbind, list_prescription_1)
+prescription1_df <- na.omit(prescription1_df)
+
+fwrite(prescription1_df, "plumas_herb_prescription.csv")
+
+
+
+
+
+```
+
+
+# Social Factors
+- PL < 4
+- red flag days
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+
+data <- fread("Routput/Plumas/plumas_hardwood_prescription.csv")
+data <- na.omit(data)
+PL <- fread("socialfilters/PL_all.csv")
+redflag <- fread("socialfilters/redflagdays.csv")
+
+#first re-format the red flag days data
+redflag <- redflag %>% mutate(startdate = date(Issue), enddate = date(Expire))
+redflag <- redflag %>% fill(c(length, startdate, enddate), .direction = "up")
+redflag <- redflag %>% select(date, length, startdate, enddate)
+redflag$date <- as_date(redflag$date)
+redflag <- redflag %>% rename(dates = "date")
+
+#join data + PL, crop data by pl < 4
+PL <- PL %>% rename(dates = "date") %>% select(-OSC) %>% fill(c(PL, ONC), .direction = "up")
+PL$dates <- as.Date(PL$dates, "%m/%d/%Y")
+data$dates <- as_date(data$dates)
+
+data2 <- left_join(data, PL)
+data2[1,19] = 1
+data2[1,20] = 1
+data2 <- data2 %>% fill(c(PL, ONC), .direction = "down")
+data2 <- data2 %>% filter(PL < 4 & ONC < 4)
+data2 <- data2 %>% distinct()
+#pause
+
+# crop ERC by red flag days
+redflag <- redflag %>%  select(dates) %>% distinct() %>% mutate(redflagday = "yes")
+redflag$dates <- as_date(redflag$dates)
+data2 <- left_join(data2, redflag)
+data2$redflagday[is.na(data2$redflagday)] <- 0
+data2 <- data2 %>% filter(redflagday == 0)
+
+fwrite(data2, "Routput/Plumas/plumas_hardwood_social.csv")
+
+#now combine and delete individual files
+data1 <- fread("Routput/Plumas/plumas_conifer_prescription.csv")
+data2 <- fread("plumas_hardwood_prescription.csv")
+data3 <- fread("plumas_herb_prescription.csv")
+data4 <- fread("plumas_shrub_prescription.csv")
+
+data <- rbind(data1, data2)
+data <- rbind(data, data3)
+data <- rbind(data, data4)
+data <- unique(data)
+
+fwrite(data, ("Plumas_in_prescription.csv"))
+
+data5 <- fread("Routput/Plumas/plumas_conifer_social.csv")
+data6 <- fread("Routput/Plumas/plumas_hardwood_social.csv")
+data7 <- fread("Routput/Plumas/plumas_herb_social.csv")
+data8 <- fread("Routput/Plumas/plumas_shrub_social.csv")
+
+dataX <- rbind(data5, data6)
+dataX <- rbind(dataX, data7)
+dataX <- rbind(dataX, data8)
+
+dataX <- unique(dataX)
+
+fwrite(dataX, ("Routput/Plumas/Plumas_social_prescription.csv"))
+
+```
+
+# Combine 
+
+```{r}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
