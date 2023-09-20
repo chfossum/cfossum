@@ -17,8 +17,9 @@ library(data.table)
 library(ggplot2)
 library(lubridate)
 
-plumas <- fread("Routput/Plumas/Plumas_in_prescription.csv")
-sonoma <- fread("Routput/Sonoma/sonoma_in_prescription.csv")
+plumas <- fread("ignore/Plumas_in_prescription.csv")
+
+sonoma <- fread("ignore/sonoma_in_prescription.csv")
 
 #spatial cell summaries
 psum <- plumas %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, dates)  %>% summarise(ncells = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(MEAN = mean(ncells), MAX = max(ncells), MIN = min(ncells), MEDIAN = median(ncells)) %>% ungroup()
@@ -45,15 +46,69 @@ ggplot(subset(psum, LIFE_FORM %in% "HERBACEOUS"),aes(x = year)) + geom_line(aes(
 ggplot(subset(psum, LIFE_FORM %in% "HARDWOOD"),aes(x = year)) + geom_line(aes(y = MEDIAN), col = 'brown') + geom_line(aes(y = MEAN), col = 'black') + geom_line(aes(y = MIN), col = 'blue')  + geom_line(aes(y = MAX), col = 'red')+ facet_wrap(vars(season))
 
 ###
-# Plumas vs. Sonoma
-p <- plumas %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(pmean = mean(ndays)) %>% ungroup()
-s <- sonoma %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(smean = mean(ndays)) %>% ungroup()
+
+# now to combine median for plumas and sonoma
+p <- plumas %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(pmed = median(ndays)) %>% ungroup()
+s <- sonoma %>% group_by(long, lat, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, long, lat)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, year, season) %>% summarise(smed = median(ndays)) %>% ungroup()
 
 ps <- full_join(p, s)
-ps <- na.omit(ps)
 
-ggplot(subset(ps, LIFE_FORM %in% "CONIFER"),aes(x = year)) + geom_line(aes(y = pmean), col = 'brown') + geom_line(aes(y = smean), col = 'black') +  facet_wrap(vars(season))
+ggplot(subset(ps, LIFE_FORM %in% "CONIFER"),aes(x = year)) + geom_line(aes(y = pmed), col = 'brown') + geom_line(aes(y = smed), col = 'black') +  facet_wrap(vars(season)) + labs(title = "median number of days within burn prescription - conifer veg type")
 
+ggplot(subset(ps, LIFE_FORM %in% "HARDWOOD"),aes(x = year)) + geom_line(aes(y = pmed), col = 'brown') + geom_line(aes(y = smed), col = 'black') +  facet_wrap(vars(season)) + labs(title = "median number of days within burn prescription - hardwood veg type")
+
+ggplot(subset(ps, LIFE_FORM %in% "SHRUB"),aes(x = year)) + geom_line(aes(y = pmed), col = 'brown') + geom_line(aes(y = smed), col = 'black') +  facet_wrap(vars(season)) + labs(title = "median number of days within burn prescription - shrub veg type")
+
+ggplot(subset(ps, LIFE_FORM %in% "HERBACEOUS"),aes(x = year)) + geom_line(aes(y = pmed), col = 'brown') + geom_line(aes(y = smed), col = 'black') +  facet_wrap(vars(season)) + labs(title = "median number of days within burn prescription - herbaceous veg type")
+
+
+```
+
+# Heat map
+```{r}
+
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+library(tmap)
+
+plumas <- fread("ignore/Plumas_in_prescription.csv")
+
+p <- read_sf("ignore/california_counties/CaliforniaCounties.shp")
+p <- p %>% filter(NAME=="Plumas")
+p <- p %>% dplyr::select(NAME, geometry)
+p <- st_transform(p, crs=26910)
+
+plumas <- st_as_sf(plumas, coords = c("long", "lat"), crs = st_crs(p))
+p <- plumas %>% group_by(geometry, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, geometry)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, season, geometry)  %>% summarise(ndays = mean(ndays)) %>% ungroup() 
+
+ggplot(subset(p, LIFE_FORM %in% "CONIFER" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Plumas - average number of days in prescription - Conifer")
+
+ggplot(subset(p, LIFE_FORM %in% "SHRUB" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Plumas - average number of days in prescription - Shrub")
+
+ggplot(subset(p, LIFE_FORM %in% "HERBACEOUS" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Plumas - average number of days in prescription - herbaceous")
+
+ggplot(subset(p, LIFE_FORM %in% "HARDWOOD" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Plumas - average number of days in prescription - hardwood")
+
+sonoma <- fread("ignore/sonoma_in_prescription.csv")
+
+s <- read_sf("ignore/california_counties/CaliforniaCounties.shp")
+s <- s %>% filter(NAME=="Sonoma")
+s <- s %>% dplyr::select(NAME, geometry)
+s <- st_transform(p, crs=26910)
+
+sonoma <- st_as_sf(sonoma, coords = c("long", "lat"), crs = st_crs(s))
+s <- sonoma %>% group_by(geometry, dates, season, year) %>% mutate(n = n()) %>% ungroup() %>% group_by(LIFE_FORM, year, season, geometry)  %>% summarise(ndays = sum(n)) %>% ungroup() %>% group_by(LIFE_FORM, season, geometry)  %>% summarise(ndays = mean(ndays)) %>% ungroup() 
+
+ggplot(subset(s, LIFE_FORM %in% "CONIFER" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Sonoma - average number of days in prescription - Conifer")
+
+ggplot(subset(s, LIFE_FORM %in% "SHRUB" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Sonoma - average number of days in prescription - Shrub")
+
+ggplot(subset(s, LIFE_FORM %in% "HERBACEOUS" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Sonoma - average number of days in prescription - herbaceous")
+
+ggplot(subset(s, LIFE_FORM %in% "HARDWOOD" )) + geom_sf(aes(color = ndays)) + scale_color_gradient(low='green', high='red') + facet_wrap(vars(season)) + labs(title = "Sonoma - average number of days in prescription - hardwood")
 
 
 
@@ -61,10 +116,11 @@ ggplot(subset(ps, LIFE_FORM %in% "CONIFER"),aes(x = year)) + geom_line(aes(y = p
 
 
 
+
 # Bar plots with weather/social filters
 
 1. Plumas
-```{r}
+```{r eval=FALSE, include=FALSE}
 library(tidyverse)
 library(data.table)
 library(ggplot2)
@@ -95,7 +151,7 @@ ggplot(subset(d1_S1, season %in% "winter")) + geom_col(aes(x = year, y = avg_n),
 ```
 
 2. Sonoma
-```{r}
+```{r eval=FALSE, include=FALSE}
 library(tidyverse)
 library(data.table)
 library(ggplot2)
