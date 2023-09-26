@@ -114,6 +114,89 @@ ggplot(subset(s, LIFE_FORM %in% "HARDWOOD" )) + geom_sf(aes(color = ndays)) + sc
 
 ```
 
+## heat map with land ownership overlaid
+
+
+The following code is just to crop the CalFire "land ownership" and "SRA" shapefiles down to sonoma and plumas county. These shapefiles for each county will be saved in the "ignore" folder. * Note that I will delete the original shapefile for whole state but it is still saved on external Fossum harddrive
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+library(tmap)
+
+
+p <- read_sf("ignore/california_counties/CaliforniaCounties.shp")
+p <- p %>% filter(NAME=="Plumas")
+p <- p %>% dplyr::select(NAME, geometry)
+p <- st_transform(p, crs=26910)
+
+ownership <- read_sf("ignore/California_Land_Ownership/ownership23_1.shp")
+ownership <- st_transform(ownership, crs = st_crs(p))
+p_ownership <- st_intersection(p, ownership)
+
+sra <- read_sf("ignore/California_State_Responsibility_Areas/Responsibility_Areas.shp")
+sra <- st_transform(sra, crs = st_crs(p))
+p_sra <- st_intersection(p, sra)
+
+plot(p$geometry) 
+plot(p_ownership$geometry, add = T)
+
+ggplot(p_ownership) + geom_sf(aes(color = OWN_GROUP))
+ggplot(p_sra) + geom_sf(aes(color = SRA))
+
+
+s <- read_sf("ignore/california_counties/CaliforniaCounties.shp")
+s <- s %>% filter(NAME=="Sonoma")
+s <- s %>% dplyr::select(NAME, geometry)
+s <- st_transform(s, crs=26910)
+
+s_ownership <- st_intersection(s, ownership)
+s_sra <- st_intersection(s, sra)
+
+plot(p$geometry) 
+plot(p_ownership$geometry, add = T)
+
+ggplot(s_ownership) + geom_sf(aes(color = OWN_GROUP))
+ggplot(s_sra) + geom_sf(aes(color = SRA))
+
+st_write(s_sra, "ignore/California_State_Responsibility_Areas/sonomaSRA.shp")
+st_write(p_sra, "ignore/California_State_Responsibility_Areas/plumasSRA.shp")
+st_write(p_ownership, "ignore/California_Land_Ownership/plumas_ownership.shp")
+st_write(s_ownership, "ignore/California_Land_Ownership/sonoma_ownership.shp")
+st_write(s, "ignore/california_counties/sonoma.shp")
+st_write(p, "ignore/california_counties/plumas.shp")
+
+
+```
+
+
+Ok, now will plot burn prescription data against land ownership type to see if maybe there is a pattern there
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+library(tmap)
+
+
+p <- read_sf("ignore/california_counties/plumas.shp")
+s <- read_sf("ignore/california_counties/sonoma.shp")
+
+p_own <- read_sf("ignore/California_Land_Ownership/plumas_ownership.shp")
+s_own <- read_sf("ignore/California_Land_Ownership/sonoma_ownership.shp")
+p_sra <- read_sf("ignore/California_State_Responsibility_Areas/plumasSRA.shp")
+s_sra <- read_sf("ignore/California_State_Responsibility_Areas/sonomaSRA.shp")
+
+ggplot() + geom_sf(s_own, aes(color = OWN_GROUP)) + geom_sf(s_sra, aes(color = SRA))
+
+plumas_land <- st_join(p_sra, p_own)
+
+
+```
 
 
 
@@ -259,6 +342,364 @@ fall2003 <- htmp %>% filter(year == 2003 & season == "fall")
 tm_shape(htmp2) + tm_dots("avg_seasonal_total", size = 2) + tm_facets(by = c("LIFE_FORM", "season")) 
 
 ```
+
+
+
+# New full data
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+
+sonoma <- fread("ignore/sonoma_all.csv")
+s <- read_sf("ignore/california_counties/sonoma.shp")
+sonoma <- st_as_sf(sonoma, coords = c("long", "lat"), crs = st_crs(s))
+
+sonoma1 <- sonoma %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month)
+
+sonoma1$in_prescription <- sub("^$", "no", sonoma1$in_prescription)
+sonoma1 <- sonoma1 %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, in_prescription =="no"~0))
+sonoma2 <- sonoma1 %>% group_by(LIFE_FORM) %>% mutate(cells = n_distinct(geometry))
+sonoma2 <- sonoma2 %>% group_by(dates, season, year, LIFE_FORM) %>% mutate(prescrip = sum(scrip)) %>% ungroup() %>% group_by(dates, season, year, LIFE_FORM) %>% summarise(percentIN = prescrip/cells, maxT = max(maxT), minT = min(minT), maxRH = max(maxRH), minRH = min(minRH), maxW = max(maxW), minFM = min(FM100), maxFM = max(FM100)) %>% ungroup()
+
+
+sonoma <- fread("ignore/sonoma_all.csv")
+
+sonoma <- sonoma %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month)
+sonoma$in_prescription <- sub("^$", "no", sonoma$in_prescription)
+sonoma <- sonoma %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, in_prescription =="no"~0))
+
+geom1 <- c(1:829)
+geom1 <- rep(geom1, 5844)
+geom1 <- as.data.frame(geom1)
+sonoma <- sonoma %>% arrange(dates)
+sonoma <- cbind(sonoma, geom1)
+sonoma1 <- sonoma %>% group_by(dates, LIFE_FORM) %>% mutate(ncells = n(), prescrip = sum(scrip), percentIN = prescrip/ncells) %>% ungroup() %>% group_by(dates, season, year, LIFE_FORM) %>% summarise(percentIN = 100*mean(percentIN), maxT = max(maxT), minT = min(minT), maxRH = max(maxRH), minRH = min(minRH), maxW = max(maxW), minFM = min(FM100), maxFM = max(FM100)) %>% ungroup()
+
+sonoma2 <- sonoma %>% group_by(dates, LIFE_FORM) %>% mutate(ncells = n(), prescrip = sum(scrip), percentIN = prescrip/ncells) %>% ungroup() %>% group_by(season, year, LIFE_FORM) %>% summarise(percentIN = 100*mean(percentIN), maxT = max(maxT), minT = min(minT), maxRH = max(maxRH), minRH = min(minRH), maxW = max(maxW), minFM = min(FM100), maxFM = max(FM100)) %>% ungroup()
+
+
+
+ggplot(subset(sonoma2, season %in% "fall")) + geom_line(aes(x = minRH, y = percentIN))  + facet_wrap(vars(LIFE_FORM)) + labs(title = "Spring days in prescription", y = "number of days in prescription") + theme_minimal()
+
+sonoma1$year <- as.character(sonoma1$year)
+
+
+ggplot(subset(sonoma1, season %in% "fall" & LIFE_FORM %in% "CONIFER")) + geom_point(aes(x = maxFM, y = percentIN)) + facet_wrap(vars(LIFE_FORM))
+
+~~~~~~~~~~~~~~~
+sonoma3 <- sonoma %>% group_by(geom1, season, year, LIFE_FORM) %>% summarise(maxT = max(maxT), minT = min(minT), maxRH = max(maxRH), minRH = min(minRH), maxW = max(maxW), minFM = min(FM100), maxFM = max(FM100), ndaysin = sum(scrip)) %>% ungroup()
+
+FallCon <- sonoma3 %>% filter(LIFE_FORM == "CONIFER" & season == "fall")
+ggplot(FallCon) + geom_col(aes(x = geom1, y = ndaysin)) + geom_line(aes(x = geom1, y = maxW))+ facet_wrap(vars(year))
+
+
+```
+
+
+Monday 9/25
+Had a thought: calculate the following: 
+      1. days in prescription
+      2. days OUT due to (a) wind - high, (b) fm - high/low, (c) temp - high, (d) RH- high/low
+and then see if there is a correlation between seasonal burn days and particular weather/prescription parameters
+
+```{r}
+
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+
+
+sonoma <- fread("ignore/sonoma_all.csv")
+
+sonoma <- sonoma %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month) %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, .default = 0))
+sonoma$in_prescription <- sub("^$", "no", sonoma$in_prescription)
+
+# scrip: 1 - in prescription, 0 - not in prescription
+# wind: 1 = max > 10, 0 = max < 10
+# fuel: 1 = fm > 20, -1 = fm < 10, 0 = fm in range
+# rh: 1 = rh too high, -1 = rh too low, 0 = rh in range
+# temp: 1 = temp too high, -1 = temp too low, 0 = temp in range
+
+sonoma <- sonoma%>% mutate(windhigh = case_when(maxW >= 10 ~ 0, .default = 1), 
+                           fuellow = case_when(FM100 < 10 ~ 0, .default = 1),
+                           fuelhigh = case_when(FM100 > 20 ~ 0, .default = 1),
+                           temphigh = case_when(maxT > 90 ~ 0, .default = 1),
+                           templow = case_when(minT < 50 ~ 0, .default = 1),
+                           rhhigh = case_when(LIFE_FORM == "SHRUB" & maxRH > 70 ~ 0, LIFE_FORM == "HERBACEOUS" & maxRH > 70 ~ 0, 
+                                          LIFE_FORM == "CONIFER" & maxRH > 80 ~ 0, LIFE_FORM == "HARDWOOD" & maxT > 70 ~ 0,  .default = 1),
+                           rhlow = case_when(LIFE_FORM == "SHRUB" & minRH < 30 ~ 0, LIFE_FORM == "HERBACEOUS" & minRH < 40 ~ 0,
+                                          LIFE_FORM == "CONIFER" & minRH < 20 ~ 0,LIFE_FORM == "HARDWOOD" & minT < 20 ~ 0, .default = 1))
+
+geom1 <- c(1:829)
+geom1 <- rep(geom1, 5844)
+geom1 <- as.data.frame(geom1)
+sonoma <- sonoma %>% arrange(dates)
+sonoma <- cbind(sonoma, geom1)
+
+sonoma1 <- sonoma %>% group_by(geom1, season, year, LIFE_FORM) %>% summarise(ndaysIN = sum(scrip), ndays_low_rh = sum(rhlow), ndays_high_rh = sum(rhhigh),
+                                                                  ndays_low_t = sum(templow), ndays_high_t = sum(temphigh), 
+                                                                  ndays_high_fm = sum(fuelhigh), ndays_low_fm = sum(fuellow), ndays_high_wind = sum(windhigh)) %>% ungroup()
+sonoma1$geom1 <- as.character(sonoma1$geom1)
+
+
+
+ggplot(subset(sonoma1, season %in% "fall" & LIFE_FORM %in% "HERBACEOUS")) 
+
+
+ggplot(subset(sonoma1, season %in% "fall" & LIFE_FORM %in% "HERBACEOUS")) + geom_point(aes(x = ndaysIN, y = ndays_high_wind, colour = geom1)) + facet_wrap(vars(year)) + theme(legend.position = "none") 
+
+
+ggplot(subset(sonoma1, season %in% "fall" & LIFE_FORM %in% "HERBACEOUS")) + geom_point(aes(x = ndaysIN, y = ndays_low_rh, colour = geom1)) + facet_wrap(vars(year)) + theme(legend.position = "none") 
+
+
+
+
+
+confall <- sonoma1 %>% filter(season == "fall" & LIFE_FORM == "CONIFER") 
+sonoma2 <- sonoma1 %>% pivot_longer(cols = c(ndaysIN, ndays_low_rh, ndays_high_rh, ndays_low_t, ndays_high_t, ndays_high_fm, ndays_low_fm, ndays_high_wind), names_to = "parameter", values_to = "n_days")
+
+
+ggplot(subset(sonoma2, season %in% "fall" & LIFE_FORM %in% "HERBACEOUS"), aes(x = parameter, y = reorder(geom1, n_days), fill = n_days)) + geom_tile() 
+
+
+# correlation heatmap 
+
+cor <- sonoma1 %>% group_by(season, year, LIFE_FORM) %>% summarise(cor_lowRH = cor(ndaysIN, ndays_low_rh), 
+                                                                   cor_highW = cor(ndaysIN, ndays_high_wind),
+                                                                   cor_highRH = cor(ndaysIN, ndays_high_rh), 
+                                                                   cor_highT = cor(ndaysIN, ndays_high_t),
+                                                                   cor_lowT = cor(ndaysIN, ndays_low_t), 
+                                                                   cor_highFM = cor(ndaysIN, ndays_high_fm),
+                                                                   cor_lowFM = cor(ndaysIN, ndays_low_fm))
+cor[is.na(cor)] = 0
+
+ggplot(cor, aes(x = year, y = season, fill = cor_highW)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+ggplot(cor, aes(x = year, y = season, fill = cor_highFM)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+ggplot(cor, aes(x = year, y = season, fill = cor_lowFM)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+ggplot(cor, aes(x = year, y = season, fill = cor_highRH)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+ggplot(cor, aes(x = year, y = season, fill = cor_lowRH)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+ggplot(cor, aes(x = year, y = season, fill = cor_highT)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+  
+
+ggplot(sonoma1, aes(x = year, y = season, fill = ndaysIN)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+ggplot(sonoma1, aes(x = year, y = season, fill = ndays_high_wind)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+
+
+```
+
+Plots for meeting
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+library(ggpubr)
+
+# SONOMA
+sonoma <- fread("ignore/sonoma_all.csv")
+
+sonoma <- sonoma %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month) %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, .default = 0))
+sonoma$in_prescription <- sub("^$", "no", sonoma$in_prescription)
+
+sonoma <- sonoma%>% mutate(windhigh = case_when(maxW >= 10 ~ 0, .default = 1), fuellow = case_when(FM100 < 10 ~ 0, .default = 1),fuelhigh = case_when(FM100 > 20 ~ 0, .default = 1),temphigh = case_when(maxT > 90 ~ 0, .default = 1),templow = case_when(minT < 50 ~ 0, .default = 1),rhhigh = case_when(LIFE_FORM == "SHRUB" & maxRH > 70 ~ 0, LIFE_FORM == "HERBACEOUS" & maxRH > 70 ~ 0, LIFE_FORM == "CONIFER" & maxRH > 80 ~ 0, LIFE_FORM == "HARDWOOD" & maxT > 70 ~ 0,  .default = 1),rhlow = case_when(LIFE_FORM == "SHRUB" & minRH < 30 ~ 0, LIFE_FORM == "HERBACEOUS" & minRH < 40 ~ 0,LIFE_FORM == "CONIFER" & minRH < 20 ~ 0,LIFE_FORM == "HARDWOOD" & minT < 20 ~ 0, .default = 1))
+
+sonoma1 <- sonoma %>% group_by(lat, long, season, year, LIFE_FORM) %>% summarise(ndaysIN = sum(scrip), ndays_low_rh = sum(rhlow), ndays_high_rh = sum(rhhigh),ndays_low_t = sum(templow), ndays_high_t = sum(temphigh), ndays_high_fm = sum(fuelhigh), ndays_low_fm =  sum(fuellow),ndays_high_wind = sum(windhigh)) %>% ungroup()
+
+sonoma2 <- sonoma1 %>% group_by(lat, long, season) %>% summarise(ndaysIN = mean(ndaysIN), ndays_low_rh = mean(ndays_low_rh), ndays_high_rh = mean(ndays_high_rh), ndays_low_t = mean(ndays_low_t), ndays_high_t = mean(ndays_high_t), ndays_high_fm = mean(ndays_high_fm), ndays_low_fm = mean(ndays_low_fm), ndays_high_wind = mean(ndays_high_wind))
+
+# PLUMAS
+plumas <- fread("ignore/plumas_all.csv")
+
+plumas <- plumas %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month) %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, .default = 0))
+plumas$in_prescription <- sub("^$", "no", plumas$in_prescription)
+
+plumas <-plumas%>% mutate(windhigh = case_when(maxW >= 10 ~ 0, .default = 1), fuellow = case_when(FM100 < 10 ~ 0, .default = 1),fuelhigh = case_when(FM100 > 20 ~ 0, .default = 1),temphigh = case_when(maxT > 90 ~ 0, .default = 1),templow = case_when(minT < 50 ~ 0, .default = 1),rhhigh = case_when(LIFE_FORM == "SHRUB" & maxRH > 70 ~ 0, LIFE_FORM == "HERBACEOUS" & maxRH > 70 ~ 0, LIFE_FORM == "CONIFER" & maxRH > 80 ~ 0, LIFE_FORM == "HARDWOOD" & maxT > 70 ~ 0,  .default = 1),rhlow = case_when(LIFE_FORM == "SHRUB" & minRH < 30 ~ 0, LIFE_FORM == "HERBACEOUS" & minRH < 40 ~ 0,LIFE_FORM == "CONIFER" & minRH < 20 ~ 0,LIFE_FORM == "HARDWOOD" & minT < 20 ~ 0, .default = 1))
+
+plumas1 <- plumas %>% group_by(lat, long, season, year, LIFE_FORM) %>% summarise(ndaysIN = sum(scrip), ndays_low_rh = sum(rhlow), ndays_high_rh = sum(rhhigh),ndays_low_t = sum(templow), ndays_high_t = sum(temphigh), ndays_high_fm = sum(fuelhigh), ndays_low_fm =  sum(fuellow),ndays_high_wind = sum(windhigh)) %>% ungroup()
+plumas1 <- plumas1 %>% filter(LIFE_FORM == "CONIFER" | LIFE_FORM == "HERBACEOUS" | LIFE_FORM == "SHRUB" | LIFE_FORM == "HARDWOOD")
+
+P <- ggplot(plumas1, aes(x = year, y = season, fill = ndaysIN)) + geom_tile() + facet_wrap(vars(LIFE_FORM)) + labs(title = "potential burn days - Plumas County")
+rhP <- ggplot(plumas1, aes(x = year, y = season, fill = ndays_low_rh)) + geom_tile() + facet_wrap(vars(LIFE_FORM)) + labs(title = "low RH days - Plumas County")
+rhW <- ggplot(plumas1, aes(x = year, y = season, fill = ndays_high_wind)) + geom_tile() + facet_wrap(vars(LIFE_FORM)) + labs(title = "High wind days - Plumas County")
+rhFM <- ggplot(plumas1, aes(x = year, y = season, fill = ndays_high_fm)) + geom_tile() + facet_wrap(vars(LIFE_FORM)) + labs(title = "high FM days - Plumas County")
+
+ggarrange(P, rhP, rhW, rhFM)
+
+ggplot(plumas_htmp, aes(x = year, y = season, fill = cor_highW)) + geom_tile() + facet_wrap(vars(LIFE_FORM))
+
+ggplot(plumas_htmp, aes(x = year, y = season, fill = cor_lowRH)) + geom_tile() + facet_wrap(vars(LIFE_FORM)) + labs(title = "Correlations between potential burn days and low RH - Plumas County")
+ggplot(sonoma_htmp, aes(x = year, y = season, fill = cor_lowRH)) + geom_tile() + facet_wrap(vars(LIFE_FORM)) + labs(title = "Correlations between potential burn days and low RH - Sonoma County")
+
+
+
+
+plumas2 <- plumas1 %>% group_by(lat, long, season) %>% summarise(ndaysIN = mean(ndaysIN), ndays_low_rh = mean(ndays_low_rh), ndays_high_rh = mean(ndays_high_rh), ndays_low_t = mean(ndays_low_t), ndays_high_t = mean(ndays_high_t), ndays_high_fm = mean(ndays_high_fm), ndays_low_fm = mean(ndays_low_fm), ndays_high_wind = mean(ndays_high_wind))
+
+p1 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndaysIN)) + geom_point(size = 2) + labs(title = "days in prescription")
+p2 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_low_rh)) + geom_point(size = 2)+ labs(title = "low RH days")
+p3 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_high_wind)) + geom_point(size = 2)+ labs(title = "High wind days")
+p4 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_high_fm)) + geom_point(size = 2)+ labs(title = "high FM days")
+p5 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_low_fm)) + geom_point(size = 2)+ labs(title = "low FM days")
+p6 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_high_t)) + geom_point(size = 2)+ labs(title = "High temp days")
+p7 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_low_t)) + geom_point(size = 2)+ labs(title = "Low temp days")
+p8 <- ggplot(subset(sonoma2, season %in% "winter"), aes(x = long, y = lat, colour = ndays_high_rh)) + geom_point(size = 2)+ labs(title = "High RH days")
+             
+winter <- ggarrange(p1, p2, p3, p4, p5, p6, p7, p8, labels = "Winter")
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+p1 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndaysIN)) + geom_point(size = 2) + labs(title = "days in prescription")
+p2 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_low_rh)) + geom_point(size = 2)+ labs(title = "low RH days")
+p3 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_high_wind)) + geom_point(size = 2)+ labs(title = "High wind days")
+p4 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_high_fm)) + geom_point(size = 2)+ labs(title = "high FM days")
+p5 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_low_fm)) + geom_point(size = 2)+ labs(title = "low FM days")
+p6 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_high_t)) + geom_point(size = 2)+ labs(title = "High temp days")
+p7 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_low_t)) + geom_point(size = 2)+ labs(title = "Low temp days")
+p8 <- ggplot(subset(sonoma2, season %in% "spring"), aes(x = long, y = lat, colour = ndays_high_rh)) + geom_point(size = 2)+ labs(title = "High RH days")
+             
+spring <- ggarrange(p1, p2, p3, p4, p5, p6, p7, p8, labels = "Spring")
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+p1 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndaysIN)) + geom_point(size = 2) + labs(title = "days in prescription")
+p2 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_low_rh)) + geom_point(size = 2)+ labs(title = "low RH days")
+p3 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_high_wind)) + geom_point(size = 2)+ labs(title = "High wind days")
+p4 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_high_fm)) + geom_point(size = 2)+ labs(title = "high FM days")
+p5 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_low_fm)) + geom_point(size = 2)+ labs(title = "low FM days")
+p6 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_high_t)) + geom_point(size = 2)+ labs(title = "High temp days")
+p7 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_low_t)) + geom_point(size = 2)+ labs(title = "Low temp days")
+p8 <- ggplot(subset(sonoma2, season %in% "summer"), aes(x = long, y = lat, colour = ndays_high_rh)) + geom_point(size = 2)+ labs(title = "High RH days")
+             
+summer <- ggarrange(p1, p2, p3, p4, p5, p6, p7, p8, labels = "Summer")
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+p1 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndaysIN)) + geom_point(size = 2) + labs(title = "days in prescription")
+p2 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_low_rh)) + geom_point(size = 2)+ labs(title = "low RH days")
+p3 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_high_wind)) + geom_point(size = 2)+ labs(title = "High wind days")
+p4 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_high_fm)) + geom_point(size = 2)+ labs(title = "high FM days")
+p5 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_low_fm)) + geom_point(size = 2)+ labs(title = "low FM days")
+p6 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_high_t)) + geom_point(size = 2)+ labs(title = "High temp days")
+p7 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_low_t)) + geom_point(size = 2)+ labs(title = "Low temp days")
+p8 <- ggplot(subset(sonoma2, season %in% "fall"), aes(x = long, y = lat, colour = ndays_high_rh)) + geom_point(size = 2)+ labs(title = "High RH days")
+             
+fall <- ggarrange(p1, p2, p3, p4, p5, p6, p7, p8, labels = "Fall")
+
+
+```
+
+
+## Stats
+```{r}
+library(spatstat)
+library(data.table)
+
+sonoma <- fread("ignore/sonoma_all.csv")
+sonoma <- sonoma %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month) %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, .default = 0))
+sonoma$in_prescription <- sub("^$", "no", sonoma$in_prescription)
+
+sonoma <- sonoma%>% mutate(windhigh = case_when(maxW >= 10 ~ 0, .default = 1), fuellow = case_when(FM100 < 10 ~ 0, .default = 1),fuelhigh = case_when(FM100 > 20 ~ 0, .default = 1),temphigh = case_when(maxT > 90 ~ 0, .default = 1),templow = case_when(minT < 50 ~ 0, .default = 1),rhhigh = case_when(LIFE_FORM == "SHRUB" & maxRH > 70 ~ 0, LIFE_FORM == "HERBACEOUS" & maxRH > 70 ~ 0, LIFE_FORM == "CONIFER" & maxRH > 80 ~ 0, LIFE_FORM == "HARDWOOD" & maxT > 70 ~ 0,  .default = 1),rhlow = case_when(LIFE_FORM == "SHRUB" & minRH < 30 ~ 0, LIFE_FORM == "HERBACEOUS" & minRH < 40 ~ 0,LIFE_FORM == "CONIFER" & minRH < 20 ~ 0,LIFE_FORM == "HARDWOOD" & minT < 20 ~ 0, .default = 1))
+sonoma1 <- sonoma %>% group_by(lat, long, season, year, LIFE_FORM) %>% summarise(ndaysIN = sum(scrip), ndays_low_rh = sum(rhlow), ndays_high_rh = sum(rhhigh),ndays_low_t = sum(templow), ndays_high_t = sum(temphigh), ndays_high_fm = sum(fuelhigh), ndays_low_fm =  sum(fuellow),ndays_high_wind = sum(windhigh)) %>% ungroup()
+
+sonoma1 <- sonoma %>% group_by(lat, long, season, year, LIFE_FORM) %>% summarise(ndaysIN = sum(scrip), ndays_low_rh = sum(rhlow), ndays_high_rh = sum(rhhigh),ndays_low_t = sum(templow), ndays_high_t = sum(temphigh), ndays_high_fm = sum(fuelhigh), ndays_low_fm =  sum(fuellow),ndays_high_wind = sum(windhigh)) %>% ungroup()
+
+~~~~~~~~~~~~~~~~~~~
+# Check for correlations
+cor.test(sonoma1$ndaysIN, sonoma1$ndays_low_rh)
+
+nin <- sonoma1 %>% select(-lat,-long,-season,-year,-LIFE_FORM)
+cor(nin)
+
+fallC <- sonoma1 %>% filter(season == "fall" & LIFE_FORM == "CONIFER") %>%  select(-lat,-long,-season,-year,-LIFE_FORM)
+f <-cor(fallC)
+springC <- sonoma1 %>% filter(season == "spring" & LIFE_FORM == "CONIFER") %>%  select(-lat,-long,-season,-year,-LIFE_FORM)
+s <-cor(springC)
+sumC <- sonoma1 %>% filter(season == "summer" & LIFE_FORM == "CONIFER") %>%  select(-lat,-long,-season,-year,-LIFE_FORM)
+su <-cor(sumC)
+wintC <- sonoma1 %>% filter(season == "winter" & LIFE_FORM == "CONIFER") %>%  select(-lat,-long,-season,-year,-LIFE_FORM)
+w <-cor(wintC)
+
+p_cor <- cbind(f[,1], s[,1], su[,1], w[,1])
+p_cor <- as.data.frame(p_cor)
+
+
+
+
+p_c <- p_cor %>% rename(fall_con_s = "V1", spring_con_s = "V2", sum_con_s = "V3", wint_con_s = "V4")
+p_sh <- p_cor %>% rename(fall_shrub_s = "V1", spring_shrub_s = "V2", sum_shrub_s = "V3", wint_shrub_s = "V4")
+p_her <- p_cor %>% rename(fall_herb_s = "V1", spring_herb_s = "V2", sum_herb_s = "V3", wint_herub_s = "V4")
+p_ha <- p_cor %>% rename(fall_hard_s = "V1", spring_hard_s = "V2", sum_hard_s = "V3", wint_hard_s = "V4")
+plumas <- cbind(p_c, p_sh, p_her, p_ha)
+sonoma <- cbind(p_c, p_sh, p_her, p_ha)
+
+plumas1 <- plumas %>% select(1:8)
+plumas2 <- plumas %>% select(9:16)
+
+sonoma1 <- sonoma %>% select(1:8)
+sonoma2 <- sonoma %>% select(9:16)
+
+
+
+df %>%
+  group_by(group_var) %>%
+  summarize(cor=cor(var1, var2))
+
+```
+
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(lubridate)
+library(sf)
+library(ggpubr)
+
+sonoma <- fread("ignore/sonoma_all.csv")
+
+sonoma <- sonoma %>% select(-year, -month, -day, -season) %>% mutate(year = year(dates), month = month(dates), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer")) %>% select(-month) %>% mutate(scrip = case_when(in_prescription== "yes" ~ 1, .default = 0))
+sonoma$in_prescription <- sub("^$", "no", sonoma$in_prescription)
+
+sonoma <- sonoma%>% mutate(windhigh = case_when(maxW >= 10 ~ 0, .default = 1), fuellow = case_when(FM100 < 10 ~ 0, .default = 1),fuelhigh = case_when(FM100 > 20 ~ 0, .default = 1),temphigh = case_when(maxT > 90 ~ 0, .default = 1),templow = case_when(minT < 50 ~ 0, .default = 1),rhhigh = case_when(LIFE_FORM == "SHRUB" & maxRH > 70 ~ 0, LIFE_FORM == "HERBACEOUS" & maxRH > 70 ~ 0, LIFE_FORM == "CONIFER" & maxRH > 80 ~ 0, LIFE_FORM == "HARDWOOD" & maxT > 70 ~ 0,  .default = 1),rhlow = case_when(LIFE_FORM == "SHRUB" & minRH < 30 ~ 0, LIFE_FORM == "HERBACEOUS" & minRH < 40 ~ 0,LIFE_FORM == "CONIFER" & minRH < 20 ~ 0,LIFE_FORM == "HARDWOOD" & minT < 20 ~ 0, .default = 1))
+sonoma <- sonoma %>% group_by(lat, long, season, year, LIFE_FORM) %>% summarise(ndaysIN = sum(scrip), ndays_low_rh = sum(rhlow), ndays_high_rh = sum(rhhigh),ndays_low_t = sum(templow), ndays_high_t = sum(temphigh), ndays_high_fm = sum(fuelhigh), ndays_low_fm =  sum(fuellow),ndays_high_wind = sum(windhigh)) %>% ungroup()
+
+s <- st_as_sf(sonoma, coords = c("long", "lat"))
+
+
+#build distance matrix
+library(ape)
+fall <- sonoma %>% filter(season =="fall") 
+dists1 <- as.matrix(dist(cbind(fall$long, fall$lat)))
+dists1.inv <- 1/dists1
+diag(dists1.inv) <- 0
+
+winter <- sonoma %>% filter(season =="winter") 
+dists2 <- as.matrix(dist(cbind(winter$long, winter$lat)))
+dists2.inv <- 1/dists2
+diag(dists2.inv) <- 0
+
+Moran.I(winter$ndaysIN, dists2.inv)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
