@@ -1,0 +1,451 @@
+---
+title: "NEWAnalysis&figs"
+author: "Christina Fossum"
+date: "2023-11-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Testing to see if the new FM is different from old
+```{r}
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(sf)
+
+plumasnewfm <- fread("NewData/PLUMASINDEXEDFM.csv")
+
+fm <- st_as_sf(plumasnewfm, coords = c('long', 'lat'), crs = 26910)
+
+
+fm1 <- fm %>% filter(Date == "2000-01-01")
+
+coords <- fread("NewData/KEEP/PlumasCoordsNEW.csv")
+fm <- fread("NewData/PLUMASINDEXEDFM.csv")
+fm$Date <- as_date(fm$Date)
+fm <- fm %>% rename(dates = "Date")
+fm2 <- fm %>% filter(fm100hr > 10 & fm100hr < 20)
+
+
+
+```
+
+
+
+
+
+
+```{r}
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(sf)
+library(elevatr)
+library(zyp)
+library(purrr)
+
+#################################################################
+# Load new data and compile into 1 dataframe
+shw <- fread("NewData/sonoma_hardwood_prescription.csv")
+sc <- fread("NewData/sonoma_conifer_prescription.csv")
+ss <- fread("NewData/sonoma_shrub_prescription.csv")
+she <- fread("NewData/sonoma_herb_prescription.csv")
+sonoma <- rbind(rbind(shw, sc), rbind(ss, she))%>% mutate(county = "sonoma")
+
+phw <- fread("NewData/nov17/plumas_hardwood_prescription.csv")
+pc1 <- fread("NewData/nov17/plumas_conifer_prescription1.csv")
+pc2 <- fread("NewData/nov17/plumas_conifer_prescription2.csv")
+pc3 <- fread("NewData/nov17/plumas_conifer_prescription3.csv")
+pc <- rbind(rbind(pc1, pc2), pc3)
+ps <- fread("NewData/nov17/plumas_shrub_prescription.csv")
+phe <- fread("NewData/nov17/plumas_herb_prescription.csv")
+plumas <- rbind(rbind(phw, pc), rbind(ps, phe)) %>% mutate(county = "plumas")
+
+
+data <- rbind(sonoma, plumas) %>% mutate(iin = case_when(hours_in > 0 ~ 1, .default = 0)) 
+
+data <- data %>% group_by(lat, long, LIFE_FORM, year, season, county) %>% summarise(burndays = sum(iin)) 
+data$season <- factor(data$season, levels = c("winter", "spring", "summer", "fall"))
+################################################################################################
+#Figure 2: season X veg type 
+plot1a <- ggplot(subset(data, county %in% "sonoma")) + geom_boxplot(aes(x = season, y = burndays)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Sonoma")
+plot1b <- ggplot(subset(data, county %in% "plumas")) + geom_boxplot(aes(x = season, y = burndays)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Plumas")
+plot1 <- ggarrange(plot1a, plot1b)
+
+
+
+```
+
+
+
+
+Sens Slope- Annual and Seasonal
+```{r}
+library(data.table)
+library(tidyverse)
+library(sf)
+library(ggpubr)
+library(trend)
+library(ggplot2)
+library(vctrs)
+
+
+#sens slope code - adapted from Jamie
+library(zyp)
+library(purrr)
+
+data <- rbind(sonoma, plumas)
+data <- data %>% mutate(iin = case_when(hours_in > 0 ~ 1, .default = 0))
+####################################################################################################3
+#(1) annual trend
+data1 <- data %>% group_by(lat, long, LIFE_FORM, year, county) %>% summarise(windows = sum(iin))  
+data1 <- data1 %>% group_by(LIFE_FORM, year, county) %>% summarise(avg_windows = mean(windows), sd_windows = sd(windows))
+
+split <- split(data1, list(data1$county, data1$LIFE_FORM))
+split <- list_drop_empty(split)
+f <- lapply(split,'[[',4)
+t <- lapply(split,'[[',2)
+slope <- map2(f, t, zyp.trend.vector, method="zhang")
+slope_df <- as.data.frame(t(do.call(cbind, slope)))
+slope_df$names <- rownames(slope_df)
+slope_df <- slope_df %>% separate(names, into = c("county", "veg_type"), "[.]")
+fwrite(slope_df, "NewData/nov17/annual_sens_slope.csv")
+
+  
+  
+  # (1) Annual Trend - Spatial
+
+dataS <- data %>% group_by(lat, long, LIFE_FORM, year, county) %>% summarise(windows = sum(iin)) 
+
+
+split <- split(dataS, list(dataS$LIFE_FORM, dataS$county, dataS$lat))
+#drop the empty values
+library(vctrs)
+split <- list_drop_empty(split)
+
+f <- lapply(split,'[[',6)
+t <- lapply(split,'[[',4)
+slope <- map2(f, t, zyp.trend.vector, method="zhang")
+slope_df <- as.data.frame(t(do.call(cbind, slope)))
+slope_df
+
+fun <- function(x){
+  data <- split[[x]]
+  data <- as.data.frame(data)
+  data <- slice(data, 1)
+  data <- data %>% select(lat, long, LIFE_FORM, county)
+}
+num <- c(1:2132)
+IDs <- lapply(num, fun)
+IDs <- do.call(rbind, IDs)
+
+slope_df <- cbind(slope_df, IDs)
+fwrite(slope_df, "NewData/nov17/annual_sens_slope_spatial.csv")
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~`
+#(2) seasonal trend
+
+data2 <- data %>% group_by(lat, long, LIFE_FORM, year, season, county) %>% summarise(windows = sum(iin))  %>% group_by(LIFE_FORM, year, season, county) %>% summarise(avg_windows = mean(windows), sd_windows = sd(windows)) 
+
+split2 <- split(data2, list(data2$season, data2$LIFE_FORM, data2$county))
+f2 <- lapply(split2,'[[',5)
+t2 <- lapply(split2,'[[',2)
+slope2 <- map2(f2, t2, zyp.trend.vector, method="zhang")
+
+slope2_df <- as.data.frame(t(do.call(cbind, slope2))) 
+slope2_df$names <- rownames(slope2_df)
+slope2_df <- slope2_df %>% separate(names, into = c("season", "veg_type", "county"), "[.]")
+
+fwrite(slope2_df, "NewData/nov17/seasonal_sens_slope.csv")
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~`
+# Spatial
+data2 <- data %>% group_by(lat, long, LIFE_FORM, year, season, county) %>% summarise(windows = sum(iin))
+
+split2 <- split(data2, list(data2$season, data2$LIFE_FORM, data2$county, data2$lat))
+library(vctrs)
+split2 <- list_drop_empty(split2)
+f2 <- lapply(split2,'[[',7)
+t2 <- lapply(split2,'[[',4)
+slope2 <- map2(f2, t2, zyp.trend.vector, method="zhang")
+slope2_df <- as.data.frame(t(do.call(cbind, slope2))) 
+
+#Adding back long
+fun <- function(x){
+  data <- split2[[x]]
+  data <- as.data.frame(data)
+  data <- slice(data, 1)
+  data <- data %>% dplyr::select(lat, long, season, LIFE_FORM, county)
+}
+
+num <- c(1:8527)
+IDs <- lapply(num, fun)
+IDs <- do.call(rbind, IDs)
+slope_df <- cbind(slope2_df, IDs)
+
+
+fwrite(slope_df, "NewData/nov17/spatial_annual_seasonal_sens.csv")
+
+```
+
+Sens Analysis- Figs 3
+```{r}
+library(data.table)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+
+annual <- fread("NewData/nov17/annual_sens_slope.csv")
+seasonal <- fread("NewData/nov17/seasonal_sens_slope.csv")
+annual_spatial <- fread("NewData/nov17/annual_sens_slope_spatial.csv")
+seasonal_spatial <- fread("NewData/nov17/spatial_annual_seasonal_sens.csv")
+sens4 <- fread("Data_Nov23/spatial_annual_seasonal_noveg_sens.csv")
+
+annual <- annual %>% select(-lbound, -trend, -ubound, -tau, -nruns, -autocor, -valid_frac, -linear, -intercept, -lbound_intercept, -ubound_intercept)
+seasonal <- seasonal %>% select(-lbound, -trend, -ubound, -tau, -nruns, -autocor, -valid_frac, -linear, -intercept, -lbound_intercept, -ubound_intercept)
+annual_spatial <- annual_spatial %>% select(-lbound, -trend, -ubound, -tau, -nruns, -autocor, -valid_frac, -linear, -intercept, -lbound_intercept, -ubound_intercept)
+annual_spatial <- annual_spatial %>% filter(sig < 0.1)
+seasonal_spatial <- seasonal_spatial %>% select(-lbound, -trend, -ubound, -tau, -nruns, -autocor, -valid_frac, -linear, -intercept, -lbound_intercept, -ubound_intercept)
+seasonal_spatial <- seasonal_spatial %>% filter(sig < 0.1)
+sens4 <- sens4 %>% select(-lbound, -trend, -ubound, -tau, -nruns, -autocor, -valid_frac, -linear, -intercept, -lbound_intercept, -ubound_intercept)%>% filter(sig < 0.1)
+
+##########################################################################
+# Figure 3A: Annual Trend Map
+
+   
+#Plumas map
+pmap <- st_read("ignore/california_counties/Plumas_shp/plumas.shp")
+plumas <- annual_spatial %>% filter(county == "plumas")
+plumas <-st_as_sf(plumas, coords = c("long", "lat"), crs = st_crs(pmap))
+plumas <- plumas %>% mutate(Sign = case_when(trendp < 1 ~ "neg", .default = "pos"))
+
+p1 <- ggplot()+  geom_sf(data = pmap) +geom_sf(data = plumas, aes(color = trendp)) +
+  scale_color_gradient2(limits = c(-77, 77),low ="blue", mid = "white" , high ="orange" ) + theme_void() + labs(title = "Plumas") 
+
+#Sonoma map
+smap <- st_read("ignore/california_counties/sonoma.shp")
+sonoma <- annual_spatial %>% filter(county=="sonoma")
+sonoma <-st_as_sf(sonoma, coords = c("long", "lat"), crs = st_crs(smap))
+sonoma <- sonoma %>% mutate(Sign = case_when(trendp < 1 ~ "neg", .default = "pos"))
+
+p2 <- ggplot()+  geom_sf(data = smap) +geom_sf(data = sonoma, aes(color = trendp)) + scale_color_gradient2(limits = c(-77, 77),low ="blue", mid = "white" , high ="orange" ) + theme_void() + labs(title = "Sonoma")
+
+ggarrange(p2, p1, common.legend = TRUE)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# Figure 3B: Seasonal trend map
+
+#Plumas map
+plumasB <- seasonal_spatial %>% filter(county == "plumas")
+plumasB <-st_as_sf(plumasB, coords = c("long", "lat"), crs = st_crs(pmap))
+plumasB <- plumasB %>% mutate(Sign = case_when(trendp < 1 ~ "neg", .default = "pos"))
+
+p1 <- ggplot()+  geom_sf(data = pmap) +geom_sf(data = plumasB, aes(color = trendp)) +
+  scale_color_gradient2(limits = c(-74, 39),low ="blue", mid = "darkgray" , high ="orange") + facet_wrap(vars(season)) + theme_void() + labs(title = "Plumas") 
+
+#Sonoma map
+sonomaB <- seasonal_spatial %>% filter(county == "sonoma")
+sonomaB <-st_as_sf(sonomaB, coords = c("long", "lat"), crs = st_crs(smap))
+sonomaB <- sonomaB %>% mutate(Sign = case_when(trendp < 1 ~ "neg", .default = "pos"))
+
+p2 <- ggplot()+  geom_sf(data = smap) +geom_sf(data = sonomaB, aes(color = trendp)) +
+  scale_color_gradient2(limits = c(-74, 39),low ="blue", mid = "darkgray" , high ="orange") + facet_wrap(vars(season)) + theme_void() + labs(title = "Sonoma") 
+
+
+ggarrange(p2, p1, common.legend = TRUE)
+  
+  
+ 
+
+```
+
+Fig 1: CA Veg
+```{r}
+
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(sf)
+library(elevatr)
+library(zyp)
+library(purrr)
+
+#Figure 1: Map of state, highlighting counties and veg classifications
+cali <- st_read("ignore/california_counties/CA_State_TIGER2016.shp")
+plumas <- st_read("ignore/california_counties/Plumas_shp/plumas.shp")
+sonoma <- st_read("ignore/california_counties/sonoma.shp")
+cali <- st_transform(cali, crs = st_crs(plumas))
+
+p1 <- ggplot() + geom_sf(data = cali, fill = "darkgray") + geom_sf(data = plumas, fill = "red") + geom_sf(data = sonoma, fill = "red") + theme_void()
+
+#1b: veg
+sveg <- fread("ignore/October6/sonoma_prescription.csv")%>% mutate(county = "sonoma")
+pveg <- fread("ignore/October6/plumas_prescription.csv")%>% mutate(county = "plumas")
+sveg <- sveg %>% filter(dates == '2003-01-01') %>% select(lat, long, LIFE_FORM)
+pveg <- pveg %>% filter(dates == '2003-01-01') %>% select(lat, long, LIFE_FORM)
+pveg <-st_as_sf(pveg, coords = c("long", "lat"), crs = st_crs(plumas))
+sveg <-st_as_sf(sveg, coords = c("long", "lat"), crs = 3488)
+sveg <- st_transform(sveg, crs = st_crs(plumas))
+sveg$LIFE_FORM<-tolower(sveg$LIFE_FORM)
+sveg <- sveg %>% rename(vegetation_type = "LIFE_FORM")
+pveg$LIFE_FORM<-tolower(pveg$LIFE_FORM)
+pveg <- pveg %>% rename(vegetation_type = "LIFE_FORM")
+p2 <- ggplot() + geom_sf(data = sonoma) + geom_sf(data = sveg, aes(color= vegetation_type)) + theme_void()+
+  theme(legend.position = 'none')
+p3 <- ggplot() + geom_sf(data = plumas) + geom_sf(data = pveg, aes(color= vegetation_type))  + theme_void()
+ggarrange(p1, p2, p3, ncol=3, heights = c(4, 4, 6), widths = c(4, 4, 6), 
+          labels = "Sonoma and Plumas County Vegetation Types")
+
+
+###################################################
+#for presentation
+ggplot() + geom_sf(data = sonoma) + geom_sf(data = sveg, aes(color= vegetation_type))+ theme_void() 
+ggplot() + geom_sf(data = plumas) + geom_sf(data = pveg, aes(color= vegetation_type))  + theme_void()+
+  theme(legend.position = 'none')
+
+
+```
+
+
+Fig 2
+```{r}
+sonoma <- fread("NewData/KEEP/SONOMAPRESCRIPTION.csv")%>% mutate(county = "sonoma")
+plumas <- fread("NewData/KEEP/PLUMASPRESCRIPTION.csv")%>% mutate(county = "plumas")
+
+
+data <- rbind(sonoma, plumas) %>% mutate(iin = case_when(hours_in > 0 ~ 1, .default = 0)) 
+
+data <- data %>% group_by(lat, long, LIFE_FORM, year.x, season, county) %>% summarise(burndays = sum(iin)) 
+data$season <- factor(data$season, levels = c("winter", "spring", "summer", "fall"))
+
+
+#Figure 2: season X veg type 
+plot1a <- ggplot(subset(data, county %in% "sonoma")) + geom_boxplot(aes(x = season, y = burndays)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Sonoma")
+plot1b <- ggplot(subset(data, county %in% "plumas")) + geom_boxplot(aes(x = season, y = burndays)) + facet_wrap(vars(LIFE_FORM)) + labs(title = "Plumas")
+plot1 <- ggarrange(plot1a, plot1b)
+
+```
+
+
+Bar Plots
+```{r}
+sonoma <- fread("NewData/KEEP/SONOMAPRESCRIPTION2.csv")%>% mutate(county = "sonoma")
+plumas <- fread("NewData/KEEP/PLUMASPRESCRIPTION2.csv")%>% mutate(county = "plumas")
+
+
+data <- rbind(sonoma, plumas) %>% mutate(iin = case_when(hours_in > 0 ~ 1, .default = 0)) 
+
+data <- data %>% group_by(lat, long, LIFE_FORM, year, season, county) %>% summarise(burndays = sum(iin)) 
+data$season <- factor(data$season, levels = c("winter", "spring", "summer", "fall"))
+
+data2 <- data %>% group_by(LIFE_FORM, year, season, county) %>% summarise(mean_burndays = mean(burndays), sd_burndays = sd(burndays))
+
+### Mann-Kendall test
+library(Kendall)
+
+MKdata <- rbind(sonoma, plumas) %>% mutate(iin = case_when(hours_in > 0 ~ 1, .default = 0)) %>% group_by(dates, LIFE_FORM, year, season, county)%>% summarise(burndays = sum(iin)) 
+
+#split the data by category
+MKdata <- split(MKdata, list(MKdata$LIFE_FORM, MKdata$county))
+
+#add in missing dates
+d1 <- as_date("2000-01-02")
+d2 <- as_date("2022-12-31")
+dates <- seq(d1, d2, by= "day")
+dates <- as.data.frame(dates)
+
+datefun <- function(x){
+  data <- as.data.frame(MKdata[[x]])
+  data$dates <- as_date(data$dates)
+  data <- left_join(dates, data)
+  data <- data %>% replace(is.na(data), 0)
+}
+
+num <- c(1:8)
+MKlist <- lapply(num, datefun)
+
+#Mann-Kendall Test (annual trend)
+fun2 <- function(x){
+  data <- as.data.frame(MKlist[[x]])
+  ts <- ts(data$burndays, start(c(2000, 01, 01), end = c(2022, 12, 31), frequency = 365))
+  trend <- MannKendall(ts)
+  tau <- as.data.frame(trend[[1]])
+  pvalue <- as.data.frame(trend[[2]])
+  trend2 <- cbind(tau, pvalue)
+}
+MKannual <- lapply(num, fun2)
+MKannual <- do.call(rbind, MKannual)
+MKannual <- MKannual %>% mutate(county = c("plumas", "plumas", "plumas", "plumas", "sonoma", "sonoma", "sonoma", "sonoma"))
+MKannual <- MKannual %>% mutate(veg = c("conifer", "hardwood", "herbaceous", "shrub", "conifer", "hardwood", "herbaceous", "shrub"))
+
+#Annual bar plot
+MKdata <- rbind(sonoma, plumas) %>% mutate(iin = case_when(hours_in > 0 ~ 1, .default = 0)) %>% group_by(dates, LIFE_FORM, year, season, county)%>% summarise(burndays = sum(iin)) 
+annual_data <- MKdata %>% group_by(year, county, LIFE_FORM) %>% summarise(cumulative_burndays = sum(burndays))
+
+
+plotA <- ggplot(subset(annual_data, county %in% "sonoma")) + geom_col(aes(x = year, y = cumulative_burndays)) + facet_wrap(vars(LIFE_FORM))
+
+#Seasonal Mann-Kendall test (seasonal trend)
+
+
+fun3 <- function(x){
+  data <- as.data.frame(MKlist[[1]])
+  data <- data %>% mutate(Season = case_when(dates))
+  ts <- ts(data$burndays, start(c(2000, 01, 01), end = c(2022, 12, 31), frequency = 365))
+  trend <- MannKendall(ts)
+  tau <- as.data.frame(trend[[1]])
+  pvalue <- as.data.frame(trend[[2]])
+  trend2 <- cbind(tau, pvalue)
+}
+MKannual <- lapply(num, fun2)
+
+ts <- ts(data$burndays, start(c(2000, 01, 01), end = c(2022, 12, 31), frequency = 365))
+
+p_con <- MKlist[[1]] 
+p_hwood <- MKlist[[2]]
+p_herb <- MKlist[[3]]
+p_shrub <- MKlist[[4]]
+s_con <- MKlist[[5]]
+s_hwood <- MKlist[[6]]
+s_herb <- MKlist[[7]]
+s_shrub <- MKlist[[8]]
+
+#convert to time series
+ts_pcon <- ts(p_con$burndays, start(c(2000, 01, 01), end = c(2022, 12, 31), frequency = 365))
+
+#tests - seasonal
+t1 <- SeasonalMannKendall(ts_pcon)
+t2 <- smk.test(p_con)
+
+
+
+
+
+plot1a <- ggplot(subset(data2, county %in% "sonoma" & season %in% "spring")) + geom_col(aes(x = year, y = mean_burndays)) + geom_errorbar(aes(x = year, ymin = mean_burndays - sd_burndays, ymax = mean_burndays + sd_burndays))+ facet_wrap(vars(LIFE_FORM)) + labs(title = "Sonoma Spring")
+plot1b <- ggplot(subset(data2, county %in% "sonoma" & season %in% "summer")) + geom_col(aes(x = year, y = mean_burndays)) + geom_errorbar(aes(x = year, ymin = mean_burndays - sd_burndays, ymax = mean_burndays + sd_burndays))+ facet_wrap(vars(LIFE_FORM))+ labs(title = "Sonoma Summer")
+plot1c <- ggplot(subset(data2, county %in% "sonoma" & season %in% "fall")) + geom_col(aes(x = year, y = mean_burndays)) + geom_errorbar(aes(x = year, ymin = mean_burndays - sd_burndays, ymax = mean_burndays + sd_burndays))+ facet_wrap(vars(LIFE_FORM))+ labs(title = "Sonoma Fall")
+plot1d <- ggplot(subset(data2, county %in% "sonoma" & season %in% "winter")) + geom_col(aes(x = year, y = mean_burndays)) + geom_errorbar(aes(x = year, ymin = mean_burndays - sd_burndays, ymax = mean_burndays + sd_burndays))+ facet_wrap(vars(LIFE_FORM))+ labs(title = "Sonoma Winter")
+
+ggarrange(plot1a, plot1b, plot1c, plot1d,labels = "Sonoma- Annual mean number of burn days by veg & season")
+
+
+
+```
+
+```{r}
+ptest <- data %>% filter(county=="plumas") %>% group_by(season, year, LIFE_FORM)
+
+```
+
+
+
+
+
+
+

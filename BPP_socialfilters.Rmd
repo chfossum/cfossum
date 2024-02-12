@@ -1,0 +1,278 @@
+---
+title: "BPP_Data_Analysis_2"
+author: "Christina Fossum"
+date: "2024-01-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Making Bar plots with pl & CARB decisions
+
+1. Formatting Plumas& Sonoma
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+
+#Plumas
+phw <- fread("Data_Nov23/prescriptions_daytime/plumas_hardwood_prescription.csv")
+pc1 <- fread("Data_Nov23/prescriptions_daytime/plumas_conifer_prescription1.csv")
+pc2 <- fread("Data_Nov23/prescriptions_daytime/plumas_conifer_prescription2.csv")
+pc3 <- fread("Data_Nov23/prescriptions_daytime/plumas_conifer_prescription3.csv")
+pc <- rbind(rbind(pc1, pc2), pc3)
+ps <- fread("Data_Nov23/prescriptions_daytime/plumas_shrub_prescription.csv")
+phe <- fread("Data_Nov23/prescriptions_daytime/plumas_herb_prescription.csv")
+plumas <- rbind(rbind(phw, pc), rbind(ps, phe)) %>% mutate(county = "plumas")
+plumas <- plumas %>% rename(Date = "dates")
+plumas$Date <- as_date(plumas$Date)
+
+
+
+pl <- fread("socialfilters/nops_pl.csv")
+pl$Date <- as.POSIXct(pl$Date, format = "%m/%d/%Y")
+pl$Date <- as_date(pl$Date)
+
+carb <- fread("socialfilters/plumas_BD.csv")
+carb$date <- as.POSIXct(carb$date, format = "%m/%d/%Y")
+carb$date <- as_date(carb$date)
+time_int <- data.frame(date = seq.Date(as.Date("2018-01-01"), as.Date("2022-12-31"), by = "day"))
+carb <- left_join(time_int, carb)
+carb[is.na(carb)] <- "B"
+carb <- carb %>% rename(Date = "date")
+
+filters <- left_join(carb, pl)
+
+#Now join to prescriptions
+plumas2 <- left_join(filters, plumas)
+
+fwrite(plumas2, "socialfilters/plumas_BD_filters.csv")
+
+
+#Sonoma
+shw <- fread("Data_Nov23/prescriptions_daytime/sonoma_hardwood_prescription.csv")
+sc <- fread("Data_Nov23/prescriptions_daytime/sonoma_conifer_prescription.csv")
+ss <- fread("Data_Nov23/prescriptions_daytime/sonoma_shrub_prescription.csv")
+she <- fread("Data_Nov23/prescriptions_daytime/sonoma_herb_prescription.csv")
+sonoma <- rbind(rbind(shw, sc), rbind(ss, she))%>% mutate(county = "sonoma")
+sonoma$dates <- as_date(sonoma$dates)
+sonoma <- sonoma %>% rename(Date = "dates")
+
+pl <- fread("socialfilters/nops_pl.csv")
+pl$Date <- as.POSIXct(pl$Date, format = "%m/%d/%Y")
+pl$Date <- as_date(pl$Date)
+
+carb1 <- fread("socialfilters/sonoma_burndays.csv")
+carb1 <- carb1 %>% rename(Date = "Date_S")
+carb2 <- fread("socialfilters/bayarea_burndays.csv")
+carb <- left_join(carb1, carb2)
+carb$Date <- as.POSIXct(carb$Date, format = "%m/%d/%Y")
+carb$Date <- as_date(carb$Date)
+
+filters <- left_join(pl, carb)
+
+#Now join to prescriptions
+sonoma2 <- left_join(filters, sonoma)
+fwrite(sonoma2, "socialfilters/sonoma_BD_filters.csv")
+
+
+```
+
+2. plumas sensitivity thresholds
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+
+plumas <- fread("socialfilters/plumas_BD_filters.csv")
+
+#sensitivity thresholds: 0.1, 0.25, 0.5: note - plumas has 1303 cells, sonoma has 831
+#Plumas
+filters <- plumas %>% select(Date, decision, NOPS_PL)
+filters <- unique(filters)
+filters$Date <- as_date(filters$Date)
+plumas$hours_in[is.na(plumas$hours_in)] <- 0
+plumas$Date <- as_date(plumas$Date)
+plumas <- plumas %>% select(Date, decision, NOPS_PL, hours_in) %>% mutate(year = year(Date), month = month(Date), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer"))
+
+plumas <- plumas %>% mutate(window = case_when(hours_in >= 1 ~ 1, hours_in == 0 ~ 0))
+plumas1 <- plumas %>% group_by(year, season, Date) %>% summarise(n_windows = sum(window), proportion = n_windows / 1303) 
+plumas2 <- left_join(plumas1, filters)
+
+
+#Subsetting based on sensitivity
+plumas0.1 <- plumas2 %>% filter(proportion >= 0.1)
+plumas0.25 <- plumas2 %>% filter(proportion >= 0.25)
+plumas0.5 <- plumas2 %>% filter(proportion >= 0.5)
+
+#format for plots
+plumas0.1a <- plumas0.1 %>% group_by(year, season) %>% summarise(total = n())
+plumas0.1b <- plumas0.1 %>% filter( NOPS_PL <= 3) %>% group_by(year, season) %>% summarise(PL = n())
+plumas0.1c <- plumas0.1 %>% filter(decision == "B" ) %>% group_by(year, season) %>% summarise(BD = n())
+
+
+plumas0.1X <- left_join(plumas0.1a, plumas0.1b)
+plumas0.1X <- left_join(plumas0.1X, plumas0.1c)
+plumas0.1X$season <- as.factor(plumas0.1X$season)
+plumas0.1X$season <- ordered(plumas0.1X$season, levels = c("winter", "spring", "summer", "fall"))
+plumas0.1X[is.na(plumas0.1X)] <- 0
+
+p1 <- ggplot(plumas0.1X) +geom_col(aes(x = year, y = total), fill = 'white') + geom_col(aes(x = year, y = PL), fill = 'gray')+ geom_col(aes(x = year, y = BD) ,fill = 'black') + facet_wrap(vars(season)) + labs(title= "plumas 0.1 Sensitivity")
+
+
+p1 <-ggplot(plumas0.1X) + geom_col(aes(x = year, y = value, fill = Days, group = Days), position = "dodge") + facet_wrap(vars(season)) + labs(title = "Plumas - 0.5 sensitivity")
+
+
+sonoma0.1X <- left_join(sonoma0.1a, sonoma0.1b)
+sonoma0.1X <- left_join(sonoma0.1X, sonoma0.1c)
+sonoma0.1X$season <- as.factor(sonoma0.1X$season)
+sonoma0.1X$season <- ordered(sonoma0.1X$season, levels = c("winter", "spring", "summer", "fall"))
+sonoma0.1X[is.na(sonoma0.1X)] <- 0
+
+p1 <- ggplot(sonoma0.1X) +geom_col(aes(x = year, y = total), fill = 'white') + geom_col(aes(x = year, y = PL), fill = 'gray')+ geom_col(aes(x = year, y = BD) ,fill = 'black') + facet_wrap(vars(season)) + labs(title= "Sonoma 0.5 Sensitivity")
+
+
+
+
+```
+
+3. Sonoma
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+
+sonoma <- fread("socialfilters/sonoma_BD_filters.csv")
+
+#sensitivity thresholds: 0.1, 0.25, 0.5: note - plumas has 1303 cells, sonoma has 831
+
+filters <- sonoma %>% select(Date, sonoma, NOPS_PL)
+filters <- unique(filters)
+filters$Date <- as_date(filters$Date)
+sonoma$hours_in[is.na(sonoma$hours_in)] <- 0
+sonoma$Date <- as_date(sonoma$Date)
+sonoma <- sonoma %>% select(Date, sonoma, NOPS_PL, hours_in) %>% mutate(year = year(Date), month = month(Date), season = case_when(month == 9 | month == 10 | month == 11 ~ "fall", month == 3 | month == 4 | month == 5 ~ "spring", month == 12 | month == 1 | month == 2 ~ "winter", month == 6 | month == 7 | month == 8 ~ "summer"))
+
+sonoma <- sonoma %>% mutate(window = case_when(hours_in >= 1 ~ 1, hours_in == 0 ~ 0))
+sonoma1 <- sonoma %>% group_by(year, season, Date) %>% summarise(n_windows = sum(window), proportion = n_windows / 831) 
+sonoma2 <- left_join(sonoma1, filters)
+
+#Subsetting based on sensitivity
+sonoma0.1 <- sonoma2 %>% filter(proportion >= 0.1)
+sonoma0.25 <- sonoma2 %>% filter(proportion >= 0.25)
+sonoma0.5 <- sonoma2 %>% filter(proportion >= 0.5)
+
+#format for plots
+sonoma0.1a <- sonoma0.5 %>% group_by(year, season) %>% summarise(total = n())
+sonoma0.1b <- sonoma0.5 %>% filter( NOPS_PL <= 3) %>% group_by(year, season) %>% summarise(PL = n())
+sonoma0.1c <- sonoma0.5 %>% filter(sonoma == "Burn" ) %>% group_by(year, season) %>% summarise(BD = n())
+
+
+sonoma0.1X <- left_join(sonoma0.1a, sonoma0.1b)
+sonoma0.1X <- left_join(sonoma0.1X, sonoma0.1c)
+sonoma0.1X$season <- as.factor(sonoma0.1X$season)
+sonoma0.1X$season <- ordered(sonoma0.1X$season, levels = c("winter", "spring", "summer", "fall"))
+sonoma0.1X[is.na(sonoma0.1X)] <- 0
+
+p1 <- ggplot(sonoma0.1X) +geom_col(aes(x = year, y = total), fill = 'white') + geom_col(aes(x = year, y = PL), fill = 'gray')+ geom_col(aes(x = year, y = BD) ,fill = 'black') + facet_wrap(vars(season)) + labs(title= "Sonoma 0.5 Sensitivity")
+
+
+
+```
+
+
+Joining the social data and writing to CSV for plotting
+```{r}
+plumas2 <- plumas2 %>% mutate(county = "Plumas")
+sonoma2 <- sonoma2 %>% mutate(county = "Sonoma") %>% mutate(decision = case_when(sonoma == "No Burn" ~ "NB", sonoma == "Burn" ~ "B")) %>% select(-sonoma)
+dataS <- rbind(plumas2, sonoma2)
+
+dataS <- dataS %>% mutate(n_spatial_cells = case_when(county == "Plumas" ~ 1303, county == "Sonoma" ~ 831)) %>% rename(p_cells_w_windows = "proportion")
+
+#add in sensitivity- LEAST sensitive
+dataS <- dataS %>% mutate(bd_sens_min = case_when(p_cells_w_windows != 0 ~ 1, .default = 0))
+#5%
+dataS <- dataS %>% mutate(sens_5percent = case_when(p_cells_w_windows >= 0.05 ~ 1, .default = 0))
+#10%
+dataS <- dataS %>% mutate(sens_10percent = case_when(p_cells_w_windows >= 0.1  ~ 1, .default = 0))
+#20%
+dataS <- dataS %>% mutate(sens_20percent = case_when(p_cells_w_windows >= 0.2  ~ 1, .default = 0))
+#25%
+dataS <- dataS %>% mutate(sens_25percent = case_when(p_cells_w_windows >= 0.25  ~ 1, .default = 0))
+  
+  
+fwrite(dataS, "socialfilters/social_data_with_sensitivity.csv")
+  
+  
+```
+
+
+1/24: Re-visiting the Cal Fire land ownership map
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+library(sf)
+
+
+plumas_land <- st_read("ignore/California_Land_Ownership/plumas_ownership.shp")
+plumas_outline <- st_read("ignore/california_counties/Plumas_shp/plumas.shp")
+
+pl_0 <- st_area(plumas_outline)
+plumas_lo_area <- plumas_land %>% group_by(OWN_LEVEL) %>% summarise(m_2 = sum(SHAPE_Area)) %>% mutate(total = 6.77e+09) %>% mutate(proportion = m_2/total)
+pl_1 <- plumas_lo_area %>% filter(OWN_LEVEL == "Federal") %>% st_area(plumas_lo_area)
+pl_2 <- plumas_lo_area %>% filter(OWN_LEVEL == "City") %>% st_area(plumas_lo_area)
+pl_3 <- plumas_lo_area %>% filter(OWN_LEVEL == "County") %>% st_area(plumas_lo_area)
+pl_4 <- plumas_lo_area %>% filter(OWN_LEVEL == "Non Profit") %>% st_area(plumas_lo_area)
+pl_5 <- plumas_lo_area %>% filter(OWN_LEVEL == "Special District") %>% st_area(plumas_lo_area)
+pl_6 <- plumas_lo_area %>% filter(OWN_LEVEL == "State") %>% st_area(plumas_lo_area)
+pl_7 <- plumas_lo_area %>% filter(OWN_LEVEL == "Tribal") %>% st_area(plumas_lo_area)
+
+#Results: 71% fed, 0.3% non profit, 0.7% state, 
+
+plumas_land <- st_read("ignore/California_Land_Ownership/sonoma_ownership.shp")
+plumas_outline <- st_read("ignore/california_counties/sonoma.shp")
+
+pl_0 <- st_area(plumas_outline)
+plumas_lo_area <- plumas_land %>% group_by(OWN_LEVEL) %>% summarise(m_2 = sum(SHAPE_Area)) %>% mutate(total = 6.77e+09) %>% mutate(proportion = m_2/total)
+pl_1 <- plumas_lo_area %>% filter(OWN_LEVEL == "Federal") %>% st_area(plumas_lo_area)
+pl_2 <- plumas_lo_area %>% filter(OWN_LEVEL == "City") %>% st_area(plumas_lo_area)
+pl_3 <- plumas_lo_area %>% filter(OWN_LEVEL == "County") %>% st_area(plumas_lo_area)
+pl_4 <- plumas_lo_area %>% filter(OWN_LEVEL == "Non Profit") %>% st_area(plumas_lo_area)
+pl_5 <- plumas_lo_area %>% filter(OWN_LEVEL == "Special District") %>% st_area(plumas_lo_area)
+pl_6 <- plumas_lo_area %>% filter(OWN_LEVEL == "State") %>% st_area(plumas_lo_area)
+pl_7 <- plumas_lo_area %>% filter(OWN_LEVEL == "Tribal") %>% st_area(plumas_lo_area)
+
+#Results: 3%fed, 0.5% city, 1% county, 3% non-profit, 1% special district, 4% state, 
+
+
+
+sonoma <- fread("Data_Nov23/SonomaCoordsNEW.csv")
+
+sonoma <- sonoma %>% group_by(LIFE_FORM)%>% summarise(n = n()/984)
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
